@@ -147,6 +147,7 @@ h1,h2,h3,.hf{font-family:var(--hfont);font-weight:700;margin:0}
 .asbanwrap .asban{border-radius:0}
 .asban svg{width:14px;height:14px;flex:none}
 .asban .ascls{font-weight:600;opacity:.9}
+.asban .asx{margin-left:auto;padding:0 2px;border-radius:4px;display:inline-flex}.asban .asx:hover{background:rgba(255,255,255,.25)}.asban .asx svg{width:12px;height:12px}
 .btn.asbtn{background:#c62828;color:#fff;border-color:#c62828;font-weight:800}
 .asnote{display:flex;gap:6px;align-items:flex-start;background:#fdecea;color:#8e1b1b;border:2px solid #c62828;border-radius:8px;padding:6px 10px;margin-top:6px;font-size:.9em}
 .asline{color:#c62828;font-weight:800;background:#fdecea;display:inline-block;padding:2px 4px;border-radius:4px}
@@ -464,7 +465,7 @@ const FONTS = [
   { f: 'Courier Prime', g: 'Courier+Prime:wght@400;700', tag: 'Typewriter', both: true },
 ];
 // Body font that suits each heading font (used when body is left on "Automatic")
-const PAIR = { Lexend: 'Lexend', 'Comic Neue': 'Comic Neue', Caveat: 'Lexend', Kalam: 'Comic Neue', 'Playfair Display': 'Lexend', 'Courier Prime': 'Lexend' };
+const PAIR = { Lexend: 'Lexend', 'Comic Neue': 'Comic Neue', Caveat: 'Lexend', Kalam: 'Lexend', 'Playfair Display': 'Lexend', 'Courier Prime': 'Lexend' };
 const FALLBACK = { Caveat: 'cursive', Kalam: 'cursive', 'Courier Prime': 'monospace', 'Playfair Display': 'serif' };
 const PALETTES = {
   'Pastel': ['#f8c8dc', '#c6def1', '#c9e4de', '#faedcb', '#dbcdf0', '#f7d9c4', '#bfe3c0', '#f2c6de'],
@@ -816,7 +817,23 @@ function ctxName(c) {
   if (t === 'print') return 'Checklist'; return 'Planner';
 }
 function beginBatch(label) { S.batch = { label, docs: {}, ctx: curCtx() }; }
-function endBatch() { const b = S.batch; S.batch = null; if (b && Object.keys(b.docs).length) { S.undo = S.undo || []; b.t = Date.now(); b.after = {}; for (const k in b.docs) b.after[k] = S.docs[k] === undefined ? NONE : clone(S.docs[k]); S.undo.push(b); if (S.undo.length > 300) S.undo.shift(); S.redo = []; } showUndo(); }
+function endBatch() { const b = S.batch; S.batch = null; if (b && Object.keys(b.docs).length) { S.undo = S.undo || []; b.t = Date.now(); b.after = {}; for (const k in b.docs) b.after[k] = S.docs[k] === undefined ? NONE : clone(S.docs[k]); S.undo.push(b); if (S.undo.length > 300) S.undo.shift(); S.redo = []; } showUndo(); setTimeout(checkHwConflicts, 0); }
+// Homework with a fixed due date whose topic has moved to (or after) that date
+function hwConflicts() {
+  const a = assign(), out = [], seen = new Set();
+  (cfg().classes || []).forEach(c => (seqDoc(c.id).topics || []).forEach(t => (t.hw || []).forEach(h => {
+    if (!h.due || h.due.length < 10 || seen.has(h.id)) return;
+    const lk = (a.topicAt[c.id] || {})[t.id]; if (!lk || isDraft(lk)) return;
+    if (keyDate(h.due) <= keyDate(lk)) { seen.add(h.id); out.push({ cid: c.id, hid: h.id, text: h.text, due: h.due, lesson: lk, topic: t.t }); }
+  })));
+  return out;
+}
+function checkHwConflicts() {
+  if (!S.ready || S.ui.modal) return;
+  S.confAck = S.confAck || new Set();
+  const list = hwConflicts().filter(x => !S.confAck.has(x.hid + x.due + x.lesson));
+  if (list.length) { S.ui.modal = { type: 'hwconf', list }; render(); }
+}
 function noteUndo(k) { if (S.batch && !(k in S.batch.docs)) S.batch.docs[k] = S.docs[k] === undefined ? NONE : clone(S.docs[k]); }
 function showUndo() { const b = $('#undoBtn'), r = $('#redoBtn'), v = $('#revertBtn'), n = ctxBatches().length; if (b) b.classList.toggle('hidden', !(S.undo && S.undo.length)); if (v) { v.classList.toggle('hidden', !n); v.title = n ? `Undo the ${n} change${n === 1 ? '' : 's'} made in ${ctxName(curCtx())}` : ''; } if (r) r.classList.toggle('hidden', !(S.redo && S.redo.length)); }
 // Put back a saved set of documents, returning what they were just before (so it can be reversed again)
@@ -1019,7 +1036,11 @@ function assign() {
     return { all, map, topicAt, seq: seqList, shared };
   });
 }
-function topicFor(key) { const l = L(key); if (l.ownTopic) return { text: l.ownTopic, own: true }; const a = assign().map[key]; return a && a.t.t ? { text: a.t.t, i: a.i, id: a.t.id, a: a.t.a || '', shared: a.shared || '', bring: a.t.bring || '', hw: a.t.hw || [] } : null; }
+// A topic can have several things to bring (older planners stored just one)
+const bringsOf = t => !t ? [] : Array.isArray(t.bring) ? t.bring.filter(Boolean) : t.bring ? String(t.bring).split(/\s*;\s*/).filter(Boolean) : [];
+const tbKey = (tid, i) => i ? tid + '~' + i : tid;
+const splitItems = x => String(x || '').split(/\n|;/).map(y => y.trim()).filter(Boolean);
+function topicFor(key) { const l = L(key); if (l.ownTopic) return { text: l.ownTopic, own: true }; const a = assign().map[key]; return a && a.t.t ? { text: a.t.t, i: a.i, id: a.t.id, a: a.t.a || '', shared: a.shared || '', bring: bringsOf(a.t).join('; '), brings: bringsOf(a.t), hw: a.t.hw || [] } : null; }
 // Double lessons: Periods 1–2, 3–4 and 5–6 with the same class on the same day
 const PAIR_ROWS = { p2: 'p1', p4: 'p3', p6: 'p5' }, PAIR_NEXT = { p1: 'p2', p3: 'p4', p5: 'p6' };
 function doubleInfo(key) {
@@ -1060,10 +1081,11 @@ function moveBack(key) {
   return { ok: true, removed: prev && prev.t };
 }
 // "Revision (Topic test)" -> topic "Revision" with assessment "Topic test"
-function parseTopic(line) { const m = String(line).match(/^(.*?)\s*[\(\[]([^\)\]]+)[\)\]]\s*$/); return m && m[1].trim() ? { t: m[1].trim(), a: m[2].trim() } : { t: String(line).trim(), a: '' }; }
+// Brackets stay part of the topic title; assessments are added with "| Assessment: …" or the Assessment buttons
+function parseTopic(line) { return { t: String(line).trim(), a: '' }; }
 const topicRaw = t => t.a ? `${t.t} (${t.a})` : t.t;
 // "Topic (Assessment) | Bring: x | Homework: y; z" – the format used by Copy List to Share
-const topicShare = t => [topicRaw(t), t.bring ? 'Bring: ' + t.bring : '', (t.hw || []).filter(h => h.text).length ? 'Homework: ' + t.hw.filter(h => h.text).map(h => h.text).join('; ') : ''].filter(Boolean).join(' | ');
+const topicShare = t => [t.t, t.a ? 'Assessment: ' + t.a : '', bringsOf(t).length ? 'Bring: ' + bringsOf(t).join('; ') : '', (t.hw || []).filter(h => h.text).length ? 'Homework: ' + t.hw.filter(h => h.text).map(h => h.text).join('; ') : ''].filter(Boolean).join(' | ');
 // Full share list for a class: topic order with assessments (topic + scheduled), set homework and bring items (no dates)
 function shareList(cid) {
   const a = assign(), topics = seqDoc(cid).topics || [], at = a.topicAt[cid] || {}, seq = a.seq[cid] || [], extraA = {};
@@ -1077,14 +1099,14 @@ function shareList(cid) {
   return topics.filter(t => t.t).map(t => {
     const k = at[t.id], l = k ? L(k) : {};
     const as = uniq([t.a || '', l.assessment || '', ...(extraA[t.id] || [])]);
-    const br = uniq([t.bring || '', ...(l.res || []).filter(r => r.type === 'bring').map(r => r.text || '')]);
+    const br = uniq([...bringsOf(t), ...(l.res || []).filter(r => r.type === 'bring').map(r => r.text || '')]);
     const hw = uniq([...(t.hw || []).map(h => h.text || ''), ...(l.hwSet || []).map(h => h.text || '')]);
     return [t.t, as.length ? 'Assessment: ' + as.join('; ') : '', br.length ? 'Bring: ' + br.join('; ') : '', hw.length ? 'Homework: ' + hw.join('; ') : ''].filter(Boolean).join(' | ');
   }).join('\n');
 }
 function parseTopicLine(line) {
   const parts = String(line).split(/\s*\|\s*/), out = parseTopic(parts.shift() || '');
-  parts.forEach(p => { const m = p.match(/^(bring|homework|hw|assessment|assess)\s*:\s*(.*)$/i); if (!m) return; if (/^assess/i.test(m[1])) { out.a = [out.a, m[2].trim()].filter(Boolean).join('; '); return; } if (/^bring/i.test(m[1])) out.bring = m[2].trim(); else out.hw = m[2].split(/\s*;\s*/).filter(Boolean).map(text => ({ id: nid(), text })); });
+  parts.forEach(p => { const m = p.match(/^(bring|homework|hw|assessment|assess)\s*:\s*(.*)$/i); if (!m) return; if (/^assess/i.test(m[1])) { out.a = [out.a, m[2].trim()].filter(Boolean).join('; '); return; } if (/^bring/i.test(m[1])) out.bring = splitItems(m[2]); else out.hw = m[2].split(/\s*;\s*/).filter(Boolean).map(text => ({ id: nid(), text })); });
   return out;
 }
 const cleanLine = x => x.replace(/^\s*(\d+[.)]\s+|[-•*]\s+)/, '').trim();
@@ -1138,6 +1160,7 @@ function nextLessons(cid, afterKey, n = 8) { const list = realAll(cid) || []; re
 // When homework is due: '' = first lesson of the following week (default), 'next' = next lesson on a later day,
 // a date = that day's lesson (or the date itself), a lesson key = that lesson
 function resolveDue(cid, src, due) {
+  if (due === 'later') return '';
   const list = (cid && realAll(cid)) || [], sd = keyDate(src);
   if (due === 'next') return list.find(k => keyDate(k) > sd) || '';
   if (due && due.length === 10) return list.find(k => keyDate(k) === due) || due;
@@ -1147,10 +1170,17 @@ function resolveDue(cid, src, due) {
 }
 // Homework set in a lesson: items typed in the lesson plus homework attached to the lesson's topic (shared by linked classes)
 // Homework set in a lesson with a topic is saved on the topic (so it moves with the topic and is shared by linked classes)
-function hwToTopic(key, it) { const tp = topicFor(key); if (!tp || tp.own || tp.shared) return false; forGroup(classOfKey(key), sd => { const t = sd.topics.find(x => x.id === tp.id); if (t) { t.hw = t.hw || []; t.hw.push({ id: it.id, text: it.text }); } }); return true; }
+// Topic homework keeps its due date on the topic, so it moves with the topic
+function setTopicHwDue(cid, hid, due, key) { forGroup(cid, sd => sd.topics.forEach(t => (t.hw || []).forEach(h => { if (h.id === hid) h.due = due; }))); if (key) updL(key, l => { if (l.hwDue) delete l.hwDue[hid]; }); }
+function hwToTopic(key, it) { const tp = topicFor(key); if (!tp || tp.own || tp.shared) return false; forGroup(classOfKey(key), sd => { const t = sd.topics.find(x => x.id === tp.id); if (t) { t.hw = t.hw || []; t.hw.push({ id: it.id, text: it.text, due: it.due || '' }); } }); return true; }
+// Due-date picker used when setting homework: first lesson next week, next lesson, a date, or decide later
+function dueChooser(prefix, mode, date) {
+  return `<div class="row" style="margin-top:6px"><span class="small muted">Due:</span><select id="${prefix}-due" data-chg="duemode" data-p="${prefix}"><option value="" ${!mode ? 'selected' : ''}>First lesson next week</option><option value="next" ${mode === 'next' ? 'selected' : ''}>Next lesson</option><option value="date" ${mode === 'date' ? 'selected' : ''}>A specific date…</option><option value="later" ${mode === 'later' ? 'selected' : ''}>Change later (adds a reminder to my To Do List)</option></select>${mode === 'date' ? `<input type="date" id="${prefix}-duedate" value="${date || ''}">` : ''}</div>`;
+}
+function dueValue(prefix) { const m = ($('#' + prefix + '-due') || {}).value || '', d = ($('#' + prefix + '-duedate') || {}).value || ''; return m === 'date' ? (d || '') : m; }
 function hwSetFor(key) {
   const l = L(key), tp = topicFor(key), out = (l.hwSet || []).filter(x => x.text).map(x => ({ ...x, own: true }));
-  if (tp && !tp.shared) (tp.hw || []).filter(h => h.text).forEach(h => out.push({ id: 'th_' + h.id, hid: h.id, tid: tp.id, text: h.text, due: (l.hwDue || {})[h.id] ?? '', checked: !!(l.hwChecked || {})[h.id], topic: true }));
+  if (tp && !tp.shared) (tp.hw || []).filter(h => h.text).forEach(h => out.push({ id: 'th_' + h.id, hid: h.id, tid: tp.id, text: h.text, due: h.due != null ? h.due : ((l.hwDue || {})[h.id] ?? ''), checked: !!(l.hwChecked || {})[h.id], topic: true }));
   return out;
 }
 function hwIndex() {
@@ -1158,6 +1188,7 @@ function hwIndex() {
     const due = {}, byDate = {}, sets = [], keys = new Set();
     for (const k in S.docs) if (k.startsWith('L_') && (S.docs[k].hwSet || []).length) keys.add(k.slice(2));
     const am = assign().map; for (const k in am) if ((am[k].t.hw || []).length && !isDraft(k)) keys.add(k);
+    // homework still marked "change later" shows up even if no due date
     keys.forEach(key => {
       const cid = classOfKey(key);
       hwSetFor(key).forEach(it => {
@@ -1405,7 +1436,7 @@ function checkConfetti() {
   if ((all.length || et || ot) && all.every(x => x.r.done) && (!et || et.done) && (!ot || ot.done)) confettiBurst();
 }
 function renderTabs() {
-  const tabs = [['planner', 'book', 'Planner', 'Planner'], ['print', 'check', 'Checklist', 'Checklist'], ['email', 'pencil', 'Homework', 'Homework'], ['topics', 'cap', 'Classes', 'Classes'], ['settings', 'gear', 'Settings', 'Settings']];
+  const tabs = [['planner', 'book', 'Planner', 'Planner'], ['print', 'check', 'To Do List', 'To Do'], ['email', 'pencil', 'Homework', 'Homework'], ['topics', 'cap', 'Classes', 'Classes'], ['settings', 'gear', 'Settings', 'Settings']];
   const tc = resolveTheme().tabc;
   $('#tabs').innerHTML = tabs.map(([k, i, l, sm], n) => `<button class="tab ${S.ui.tab === k ? 'on' : ''}" style="--tabc:${tc[n % tc.length]};--tabink:${contrastText(tc[n % tc.length])}" data-act="tab" data-v="${k}">${I(i)} <span class="lg">${l}</span><span class="sm">${sm}</span></button>`).join('');
 }
@@ -1627,7 +1658,7 @@ const offLabel = l => { const o = OFFTYPES[l.cancelType || 'cancel'] || OFFTYPES
 // Lesson items: what's been added for the lesson, plus a "bring" item set on its topic in the Classes tab
 function resFor(key) {
   const l = L(key), tp = topicFor(key), items = (l.res || []).filter(r => r.text);
-  if (tp && tp.bring && !tp.shared) items.push({ id: 'tb_' + tp.id, text: tp.bring, type: 'bring', done: !!(l.tbDone || {})[tp.id], virtual: true });
+  if (tp && !tp.shared) (tp.brings || []).forEach((b, i) => items.push({ id: 'tb_' + tbKey(tp.id, i), text: b, type: 'bring', done: !!(l.tbDone || {})[tbKey(tp.id, i)], virtual: true }));
   return items;
 }
 function hasInk(key) { const d = S.docs['I_' + key]; return !!(d && d.s && d.s.length); }
@@ -1720,32 +1751,35 @@ function renderSheet() {
     <div class="hint" style="margin:-2px 0 6px">Scheduled assessments stand out on the planner and go into the class's homework email 2 weeks and 1 week before. The box below is just a note on this lesson.</div><input type="text" style="width:100%" data-in="L" data-f="assessment" placeholder="${esc(tp && tp.a ? tp.a : 'e.g. Topic test (leave blank if none)')}" value="${esc(l.assessment || '')}">
     ${tp && tp.a && !l.assessment ? `<div class="hint">From your topic list: ${esc(tp.a)}</div>` : ''}
     <div class="icons" style="margin-top:10px">${ICONS.map(([i, t]) => `<button class="${(l.icons || []).map(iconName).includes(i) ? 'on' : ''}" data-act="icon" data-v="${i}" title="${t}">${I(i)} <span class="small">${t}</span></button>`).join('')}</div></div>`;
-  // 3. What to bring (tick-only; items are added in the Checklist tab)
+  // 3. What to bring (tick-only; items are added in the To Do List tab)
   h += bringChecklist(key, l);
   // 4. Homework to check + outstanding
   const checks = checkItems(key);
+  const outsFor = t => (l.outs || []).find(o => o.title === t);
+  const chkRow = r => { const o = outsFor(r.text), codes = c.codes || [];
+    return `<div class="clsrow" style="background:var(--paper)"><div class="item ${r.done ? 'done' : ''}" style="margin:0"><input type="checkbox" ${r.done ? 'checked' : ''} data-act="chk-toggle" data-key="${r.home || key}" data-id="${r.id}" ${r.src ? `data-src="${r.src}"` : ''}>
+      ${r.manual && !r.from ? `<input type="text" data-in="list" data-list="hwCheck" data-id="${r.id}" data-f="text" value="${esc(r.text)}" style="color:var(--c-check)"><button class="x" data-act="list-del" data-list="hwCheck" data-id="${r.id}">${I('x')}</button>` : `<span class="grow" style="color:var(--c-check);font-weight:700">${esc(r.text)} <span class="hint" style="font-weight:400">${r.from ? `(not checked on ${fmtD(keyDate(r.from))})` : r.src ? `(set ${fmtD(keyDate(r.src))})` : ''}</span></span>`}</div>
+      ${codes.length ? `<div class="row" style="margin-top:6px;gap:4px"><span class="small muted">Not done:</span>${codes.map(x => { const on = o && o.codes.find(cc => cc.c === x); return `<button type="button" class="chip ${on ? 'on' : ''}" style="${on ? 'background:var(--c-check);color:#fff;border-color:var(--c-check)' : ''}${on && on.done ? ';text-decoration:line-through;opacity:.6' : ''}" data-act="out-chip" data-key="${key}" data-t="${esc(r.text)}" data-v="${esc(x)}">${esc(x)}</button>`; }).join('')}</div>` : ''}</div>`; };
+  const dueNow = checks.filter(r => r.src && !r.from), rolled = checks.filter(r => r.from), manual = checks.filter(r => r.manual && !r.from && !r.src);
   h += `<div class="sh-sec"><h3 style="color:var(--c-check)">${I('check')} Homework to Check</h3>
-    ${checks.map(r => `<div class="item ${r.done ? 'done' : ''}"><input type="checkbox" ${r.done ? 'checked' : ''} data-act="chk-toggle" data-key="${r.home || key}" data-id="${r.id}" ${r.src ? `data-src="${r.src}"` : ''}>
-      ${r.manual && !r.from ? `<input type="text" data-in="list" data-list="hwCheck" data-id="${r.id}" data-f="text" value="${esc(r.text)}" style="color:var(--c-check)"><button class="x" data-act="list-del" data-list="hwCheck" data-id="${r.id}">${I('x')}</button>` : `<span class="grow" style="color:var(--c-check)">${esc(r.text)} <span class="hint">${r.from ? `(not checked on ${fmtD(keyDate(r.from))})` : `(set ${fmtD(keyDate(r.src))})`}</span></span>`}</div>`).join('')}
-    <div class="hint">Tick each one once you've checked it. Anything not ticked moves to this class's next lesson.</div>
-    <form class="row" style="margin-top:4px" data-form="add-item"><input type="text" class="grow" id="add-hwCheck" placeholder="Add homework to check…" enterkeyhint="done" autocomplete="off"><button type="button" class="btn sm" data-act="add-item" data-list="hwCheck" data-keepfocus>Add</button></form>
-    <div style="margin-top:12px"><label class="small" style="font-weight:800">Outstanding / incomplete homework</label>
-    ${(l.outs || []).map(o => outBlock(key, o)).join('')}
+    ${dueNow.length ? `<div class="small" style="font-weight:800;margin-bottom:4px">Due this lesson</div>${dueNow.map(chkRow).join('')}` : ''}
+    ${rolled.length ? `<div class="small" style="font-weight:800;margin:8px 0 4px">Still to check from earlier</div>${rolled.map(chkRow).join('')}` : ''}
+    ${manual.length ? `<div class="small" style="font-weight:800;margin:8px 0 4px">Other homework to check</div>${manual.map(chkRow).join('')}` : ''}
+    ${!checks.length ? '<p class="hint">No homework is due this lesson.</p>' : ''}
+    ${(c.codes || []).length ? `<div class="hint">Tick each one once you've checked it. Tap student codes for anyone who hasn't done it – they go to Homework → Outstanding Homework.</div>` : `<div class="hint">Tick each one once you've checked it. Add student codes in Classes → ${esc(c.name)} to mark who hasn't done it.</div>`}
+    ${(l.outs || []).filter(o => !checks.some(r => r.text === o.title)).map(o => outBlock(key, o)).join('')}
     ${l.outstanding ? `<div class="hint">Earlier note: ${esc(l.outstanding)}</div>` : ''}
-    ${checks.length ? `<div class="row" style="margin-top:6px"><span class="small muted">For:</span><select id="out-for" class="grow">${[...new Set(checks.map(r => r.text))].map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join('')}</select></div>` : `<div class="hint" style="margin-top:6px">Add the homework under “Add homework to check” first, then list who hasn't done it.</div>`}
-    <form class="row" style="margin-top:6px" data-form="out-add"><input type="text" id="out-codes" class="grow" placeholder="Student codes, separated by commas, e.g. 14, 22, JS" enterkeyhint="done" autocomplete="off"><button type="button" class="btn sm pri" data-act="out-add" data-keepfocus>Add</button></form>
-    ${(c.codes || []).length ? `<div class="chips" style="margin-top:6px">${c.codes.map(x => `<button type="button" class="chip" data-act="code-pick" data-v="${esc(x)}">${esc(x)}</button>`).join('')}</div>` : `<div class="hint">Tip: add your student codes in Classes → ${esc(c.name)} to pick them here.</div>`}
-    <div class="hint">${I('lock')} Each code becomes its own tick box here and in Homework → Outstanding Homework. Use student codes or initials, never full names.</div></div>
+    <form style="margin-top:10px;border-top:1px dashed var(--line);padding-top:8px" data-form="add-item"><label class="small" style="font-weight:800">Add other homework to check</label><textarea id="add-hwCheck" rows="1" style="width:100%;min-height:38px;margin-top:4px" placeholder="One per line"></textarea><div class="row" style="margin-top:4px"><span class="grow"></span><button type="button" class="btn sm" data-act="add-item" data-list="hwCheck" data-keepfocus>Add</button></div></form>
   </div>`;
   // 5. Homework set (saved with the lesson's topic, so linked classes get it too)
   const hws = hwSetFor(key), lw = linkedWith(s.c);
   h += `<div class="sh-sec"><h3 style="color:var(--c-set)">${I('pencil')} Homework Set</h3>
     ${hws.map(r => { const dk = resolveDue(s.c, key, r.due); return `<div class="clsrow" style="background:var(--paper)"><div class="row nowrap"><input type="text" class="grow" ${r.topic ? `data-in="thw" data-tid="${r.tid}" data-id="${r.hid}"` : `data-in="list" data-list="hwSet" data-id="${r.id}" data-f="text"`} value="${esc(r.text)}" style="color:var(--c-set)"><button class="x" data-act="${r.topic ? 'thw-del' : 'list-del'}" data-list="hwSet" data-tid="${r.tid || ''}" data-id="${r.topic ? r.hid : r.id}" aria-label="Remove">${I('x')}</button></div>
       <div class="row" style="margin-top:6px"><span class="small muted">Due:</span><select data-chg="hwdue" data-key="${key}" data-id="${r.topic ? r.hid : r.id}" data-topic="${r.topic ? 1 : ''}">
-        <option value="" ${!r.due ? 'selected' : ''}>First lesson next week</option><option value="next" ${r.due === 'next' ? 'selected' : ''}>Next lesson (next day)</option><option value="__custom" ${r.due && r.due !== 'next' ? 'selected' : ''}>Pick a date…</option></select>
-        ${r.due && r.due !== 'next' ? `<input type="date" data-chg="hwdue" data-key="${key}" data-id="${r.topic ? r.hid : r.id}" data-topic="${r.topic ? 1 : ''}" value="${r.due.length === 10 ? r.due : keyDate(r.due)}">` : ''}
-        <span class="small" style="font-weight:700">${dk ? fmtD(dk.slice(0, 10)) + (dk.length > 10 ? ' · ' + esc(rowOf(keyRow(dk)).label.replace('Period ', 'P')) : '') : 'No lesson found'}</span></div></div>`; }).join('')}
-    <form class="row" style="margin-top:6px" data-form="add-item"><input type="text" class="grow" id="add-hwSet" placeholder="Add homework you're setting…" enterkeyhint="done" autocomplete="off"><button type="button" class="btn sm" data-act="add-item" data-list="hwSet" data-keepfocus>Add</button></form>
+        <option value="" ${!r.due ? 'selected' : ''}>First lesson next week</option><option value="next" ${r.due === 'next' ? 'selected' : ''}>Next lesson (next day)</option><option value="__custom" ${r.due && r.due !== 'next' && r.due !== 'later' ? 'selected' : ''}>Pick a date…</option><option value="later" ${r.due === 'later' ? 'selected' : ''}>Change later</option></select>
+        ${r.due && r.due !== 'next' && r.due !== 'later' ? `<input type="date" data-chg="hwdue" data-key="${key}" data-id="${r.topic ? r.hid : r.id}" data-topic="${r.topic ? 1 : ''}" value="${r.due.length === 10 ? r.due : keyDate(r.due)}">` : ''}
+        <span class="small" style="font-weight:700">${r.due === 'later' ? 'Reminder on your To Do List' : dk ? fmtD(dk.slice(0, 10)) + (dk.length > 10 ? ' · ' + esc(rowOf(keyRow(dk)).label.replace('Period ', 'P')) : '') : 'No lesson found'}</span></div></div>`; }).join('')}
+    <form style="margin-top:6px" data-form="add-item"><textarea id="add-hwSet" rows="2" style="width:100%;min-height:48px" placeholder="Add homework you're setting – one task per line"></textarea>${dueChooser('sh', S.ui.shDue || '', S.ui.shDueDate || '')}<div class="row" style="margin-top:6px"><span class="grow"></span><button type="button" class="btn sm pri" data-act="add-item" data-list="hwSet" data-keepfocus>Add Homework</button></div></form>
     <div class="hint">Due by default in the first lesson of the following week. It shows in that lesson's "to check" list and in the class email.${lw.length && tp && !tp.shared ? ` Shared with ${esc(lw.map(x => x.name).join(', '))} because they use the same topics.` : ''}</div>
   </div>`;
   // 6. Notes  7. Lesson buttons  8. How did it go?
@@ -1767,7 +1801,7 @@ function bringChecklist(key, l, title) {
   const items = (keyRow(key) === 'day' ? (l.res || []).filter(r => r.text) : resFor(key)).sort((a, b) => !!a.done - !!b.done);
   return `<div class="sh-sec"><h3 style="color:var(--c-res)">${I('bag')} ${title || 'What to Bring'}</h3>
     ${items.map(r => `<label class="item ${r.done ? 'done' : ''}"><input type="checkbox" ${r.done ? 'checked' : ''} data-act="res-toggle" data-key="${key}" data-id="${r.id}"><span class="typeTag t-${r.type || 'print'}">${RTYPES[r.type || 'print'].l}</span><span class="grow" style="color:var(--c-res)${r.done ? ';text-decoration:line-through;opacity:.6' : ''}">${esc(r.text)}</span></label>`).join('') || '<p class="muted small" style="margin:0">Nothing yet.</p>'}
-    <div class="hint">Add items in the Checklist tab.</div></div>`;
+    <div class="hint">Add items in the To Do List tab.</div></div>`;
 }
 function dueOptions(nx, cur) {
   let o = `<option value="">No due date</option>`;
@@ -1817,11 +1851,11 @@ function printData(m, filter) {
   }
   const am = assign().map;
   for (const key in am) {
-    const t = am[key].t; if (!t.bring || am[key].shared || !want('bring')) continue;
+    const t = am[key].t, bl = bringsOf(t); if (!bl.length || am[key].shared || !want('bring') || isDraft(key)) continue;
     const d = keyDate(key); if (d > end || L(key).cancelled) continue;
     const s = slotsOn(d).find(x => x.key === key); if (!s) continue;
-    const r = { id: 'tb_' + t.id, text: t.bring, type: 'bring', done: !!(L(key).tbDone || {})[t.id] }, it = { kind: 'les', key, d, s, r };
-    if (d >= m) (groups[d] = groups[d] || []).push(it); else if (!r.done) carried.push(it);
+    bl.forEach((b, i) => { const r = { id: 'tb_' + tbKey(t.id, i), text: b, type: 'bring', done: !!(L(key).tbDone || {})[tbKey(t.id, i)] }, it = { kind: 'les', key, d, s, r };
+    if (d >= m) (groups[d] = groups[d] || []).push(it); else if (!r.done) carried.push(it); });
   }
   const rowIdx = id => cfg().rows.findIndex(r => r.id === id);
   Object.values(groups).forEach(g => g.sort((a, b) => (!!a.r.done - !!b.r.done) || (a.kind === 'les' && b.kind === 'les' ? rowIdx(a.s.row.id) - rowIdx(b.s.row.id) : a.kind === 'day' ? -1 : b.kind === 'day' ? 1 : 0)));
@@ -1836,11 +1870,18 @@ function printLine(it, showDate) {
   else where = `<span class="small muted">${showDate ? 'Week of ' + fmtDM(it.wk) : 'This week'}</span>`;
   const act = it.kind !== 'ext' ? `data-act="res-toggle" data-key="${it.key}" data-id="${r.id}"` : `data-act="extra-toggle" data-v="${it.wk}" data-id="${r.id}"`;
   const del = it.kind === 'ext' ? `<button class="x" data-act="extra-del" data-v="${it.wk}" data-id="${r.id}" aria-label="Delete">${I('x')}</button>` : '';
-  return `<div class="list-item ${r.done ? 'done' : ''}"><input type="checkbox" ${r.done ? 'checked' : ''} ${act}><span class="typeTag t-${t}">${I(RTYPES[t].i)} ${RTYPES[t].l}</span><span class="tx grow">${esc(r.text)}</span>${where}${del}</div>`;
+  const pp = !r.done && !String(r.id).startsWith('tb_') ? `<button class="btn sm" data-act="postpone" data-kind="${it.kind}" data-key="${it.key || ''}" data-v="${it.wk || ''}" data-id="${r.id}" title="Move to next week">${I('right')} Postpone</button>` : '';
+  return `<div class="list-item ${r.done ? 'done' : ''}"><input type="checkbox" ${r.done ? 'checked' : ''} ${act}><span class="typeTag t-${t}">${I(RTYPES[t].i)} ${RTYPES[t].l}</span><span class="tx grow">${esc(r.text)}</span>${where}${pp}${del}</div>`;
 }
 function outTodo(m) {
   const end = addDays(m, 6), rows = outsAll().filter(x => keyDate(x.key) <= end).map(x => ({ ...x, left: x.o.codes.filter(c => !c.done).map(c => c.c) })).filter(x => x.left.length);
   return rows.length ? { rows, n: rows.reduce((a, x) => a + x.left.length, 0), done: !!(S.docs['W_' + m] || {}).outEmailDone } : null;
+}
+// Homework set with "Change later" – reminders to choose a due date
+function dueLaterTodo(m) {
+  const end = addDays(m, 6), seen = new Set();
+  const cur = m >= mondayOf(todayIso());
+  return hwIndex().sets.filter(r => r.it.due === 'later' && (cur || keyDate(r.src) <= end) && !isDraft(r.src)).filter(r => { const k = r.it.hid || r.it.id; if (seen.has(k)) return false; seen.add(k); return true; });
 }
 function emailTodo(m) { const em = buildEmails(m, false); return em.length ? { n: em.length, done: !!(S.docs['W_' + m] || {}).emailDone } : null; }
 function checklistAdd(m) {
@@ -1866,11 +1907,12 @@ function checklistList(m, compact) {
   const days = [0, 1, 2, 3, 4].map(i => addDays(m, i)), f = compact ? 'all' : S.ui.printFilter;
   const { groups, carried } = printData(m, f), et = f === 'all' || f === 'todo' ? emailTodo(m) : null;
   const all = [...carried, ...Object.values(groups).flat()];
-  const ot = f === 'all' || f === 'todo' ? outTodo(m) : null;
-  const total = all.length + (et ? 1 : 0) + (ot ? 1 : 0), done = all.filter(x => x.r.done).length + (et && et.done ? 1 : 0) + (ot && ot.done ? 1 : 0);
+  const ot = f === 'all' || f === 'todo' ? outTodo(m) : null, dl = f === 'all' || f === 'todo' ? dueLaterTodo(m) : [];
+  const total = all.length + (et ? 1 : 0) + (ot ? 1 : 0) + dl.length, done = all.filter(x => x.r.done).length + (et && et.done ? 1 : 0) + (ot && ot.done ? 1 : 0);
   return `<div class="card"><div class="row">${compact ? '<h3 class="grow">This Week’s To Do List</h3>' : `<div class="chips grow">${[['all', 'Everything'], ['print', 'Print'], ['bring', 'Bring'], ['upload', 'Upload'], ['todo', 'To Do']].map(([k, l]) => `<button class="chip ${f === k ? 'on' : ''}" data-act="pfilter" data-v="${k}">${k !== 'all' ? I(RTYPES[k].i) + ' ' : ''}${l}</button>`).join('')}</div>`}<strong>${done}/${total} done</strong></div>
   <div class="progress" style="margin-top:8px"><div style="width:${total ? done / total * 100 : 0}%"></div></div></div>
   ${et ? `<div class="card"><div class="list-item ${et.done ? 'done' : ''}"><input type="checkbox" ${et.done ? 'checked' : ''} data-act="email-done" data-v="${m}"><span class="typeTag t-todo">${I('mail')} Email</span><span class="tx grow">Send the homework reminder email${et.n > 1 ? `s (${et.n} classes)` : ''}</span><button class="btn sm" data-act="goto-email">Open Emails</button></div></div>` : ''}
+  ${dl.length ? `<div class="card" style="border-left:6px solid var(--c-set)"><h3>${I('pencil')} Homework Due Dates to Set</h3>${dl.map(r => `<div class="list-item"><span class="typeTag t-todo">${I('calendar')} Due date</span><span class="tx grow">Choose a due date for “${esc(r.it.text)}”</span><span class="row nowrap small">${cls(r.cid) ? `<span class="dot" style="background:${cls(r.cid).color}"></span>${esc(cls(r.cid).name)} · ` : ''}set ${fmtD(keyDate(r.src))}</span><button class="btn sm" data-act="open" data-v="${r.src}">Set Date</button></div>`).join('')}</div>` : ''}
   ${ot ? `<div class="card"><div class="list-item ${ot.done ? 'done' : ''}" style="align-items:flex-start"><input type="checkbox" ${ot.done ? 'checked' : ''} data-act="outemail-done" data-v="${m}"><span class="typeTag t-todo">${I('mail')} Email</span><span class="tx grow">Email students about outstanding homework (${ot.n} student${ot.n === 1 ? '' : 's'})<br><span class="small muted">${ot.rows.map(x => `${esc((cls(x.cid) || {}).name || '')} – ${esc(x.o.title)}: ${esc(x.left.join(', '))}`).join('<br>')}</span></span><button class="btn sm" data-act="goto-out">Open</button></div></div>` : ''}
   ${carried.length ? `<div class="card" style="border-left:6px solid var(--accent)"><h3>${I('refresh')} Carried Over – Not Ticked Off Yet</h3>${carried.map(it => printLine(it, true)).join('')}</div>` : ''}
   ${(groups._week || []).length ? `<div class="card"><h3>This Week (No Particular Lesson)</h3>${groups._week.map(it => printLine(it, false)).join('')}</div>` : ''}
@@ -1915,9 +1957,9 @@ function rowForTime(t) { const m = tMins(t); if (m == null) return ''; const r =
 const asmtRow = a => a.time ? rowForTime(a.time) : (a.row || '');
 const asmtWhen = a => `${fmtLong(a.date)}${a.time ? ' at ' + fmtTime(a.time) : a.row ? ', ' + asmtRowLabel(a.row) : ''}`;
 const asmtsOn = (d, row) => asmts().filter(a => a.date === d && (row === undefined || asmtRow(a) === row));
-function asmtBanner(a, short) {
+function asmtBanner(a, short, inline) {
   const c = a.cid ? cls(a.cid) : null;
-  return `<span class="asban" data-act="asmt-edit" data-id="${a.id}" title="Tap to edit this assessment">${I('alert')} <span>ASSESSMENT${a.time ? ' ' + fmtTime(a.time) : ''}${short ? '' : ':'} ${esc(a.title)}${c ? ` <span class="ascls">${esc(c.name)}</span>` : ''}</span></span>`;
+  return `<span class="asban" data-act="asmt-edit" data-id="${a.id}" title="Tap to edit this assessment" ${inline ? 'style="display:inline-flex;margin-left:6px"' : ''}>${I('alert')} <span class="grow">ASSESSMENT${a.time ? ' ' + fmtTime(a.time) : ''}${short ? '' : ':'} ${esc(a.title)}${c ? ` <span class="ascls">${esc(c.name)}</span>` : ''}</span><span class="asx" data-act="asmt-del" data-id="${a.id}" title="Delete this assessment">${I('x')}</span></span>`;
 }
 // Reminders for a class's weekly email: 2 weeks and 1 week before the assessment's week
 function asmtReminders(cid, m) {
@@ -2200,13 +2242,14 @@ function renderTopics() {
     <div class="card row" style="padding:10px 14px;margin-bottom:10px"><span class="small" style="font-weight:800">Students in ${esc(c.name)}</span><input type="number" min="0" max="999" inputmode="numeric" style="width:90px" data-chg="clsstudents" data-id="${cid}" value="${c.students || ''}" placeholder="e.g. 24"><span class="hint">Shows on the class buttons above.</span></div>
     ${lw.length ? `<div class="bn" style="margin-bottom:10px">${I('refresh')}<span class="grow small"><strong>Linked with ${esc(lw.map(x => x.name).join(', '))}.</strong> Topics and homework are shared. Change this in Settings → Classes & Colours.</span></div>` : ''}
     <div class="card"><h2>Add Topics</h2>
-      <p class="hint">Add topics after your last ${esc(c.name)} topic, or pick a lesson to drop a few into a particular week. Later topics move along to make room. Put an assessment in brackets, e.g. <em>Revision (Topic test)</em>.</p>
+      <p class="hint">Add topics after your last ${esc(c.name)} topic, or pick a lesson to drop a few into a particular week. Later topics move along to make room. Brackets stay part of the title. Add an assessment with the Assessments card below.</p>
       <div class="row"><span class="small muted">Put it</span><select data-chg="addwhere"><option value="end" ${S.ui.addWhere !== 'at' ? 'selected' : ''}>After my last topic</option><option value="at" ${S.ui.addWhere === 'at' ? 'selected' : ''}>In a particular lesson</option></select>
         ${S.ui.addWhere === 'at' ? `<select class="grow" data-chg="addat">${lessonOpts(addAt)}</select>` : ''}</div>
       ${S.ui.addWhere === 'at' ? '<p class="hint" style="margin-top:2px">After each topic the lesson moves on by one, so you can type several in a row.</p>' : ''}
       <form data-form="topic-add1" style="margin-top:8px"><div class="row nowrap"><input type="text" id="topic-new" class="grow" placeholder="Type a topic and press Enter" enterkeyhint="done" autocomplete="off"><button type="button" class="btn pri" data-act="topic-add1" data-keepfocus>${I('plus')} Add</button></div>
-        <div class="row nowrap" style="margin-top:6px"><span style="color:var(--c-res)">${I('bag')}</span><input type="text" id="topic-bring" class="grow" placeholder="Something to bring for this lesson? (optional)" autocomplete="off"></div>
-        <div class="row nowrap" style="margin-top:6px"><span style="color:var(--c-set)">${I('pencil')}</span><input type="text" id="topic-hw" class="grow" placeholder="Set homework for this lesson? (optional)" autocomplete="off"></div></form>
+        <div class="row nowrap" style="margin-top:6px"><span style="color:var(--c-res)">${I('bag')}</span><textarea id="topic-bring" class="grow" rows="1" style="min-height:38px" placeholder="Something to bring? (optional – one item per line)"></textarea></div>
+        <div class="row nowrap" style="margin-top:6px"><span style="color:var(--c-set)">${I('pencil')}</span><textarea id="topic-hw" class="grow" rows="1" style="min-height:38px" placeholder="Set homework? (optional – one task per line)"></textarea></div>
+        <div style="margin-left:26px">${dueChooser('tp', S.ui.tpDue || '', S.ui.tpDueDate || '')}</div></form>
       <details style="margin-top:10px" ${S.ui.pasteOpen ? 'open' : ''} id="pasteBox"><summary class="small" style="cursor:pointer;font-weight:800">Paste a whole list (a year/semester/term/area of study)</summary>
         <p class="hint" style="margin-top:6px">One topic per line. Choose the lesson the list starts from. Nothing changes until you press a button below. Topics already before that lesson stay where they are.</p>
         <div class="row"><span class="small muted">Start from</span><select class="grow" data-chg="seqstartkey">${lessonOpts(seqStart)}</select></div>
@@ -2247,7 +2290,7 @@ function topicOverview(cid, topicsAll, a, terms) {
   const order = [...terms.map(t => t.id), '__none'].filter(g => groups[g]);
   if (!topicsAll.length) return `<p class="muted">No topics yet. Type one on the left and press Enter.</p>`;
   return `<p class="hint">Drag the dotted handle to change the order – the lesson dates update to match. Type in a topic to change it, or tap + to add one after it. Open two terms to move a topic between them.</p>
-  <div id="seqlist">${order.map(g => { const label = g === '__none' ? 'Not scheduled yet' : terms.find(t => t.id === g).name; return `<div class="termgrp">${termHead(g, label, groups[g].filter(x => x.t.t).length + ' topics')}${termIsOpen(g) ? groups[g].map(({ t, i, k }) => `<div class="seq-row${wkShade(k)}" data-id="${t.id}"><span class="handle" data-drag="${t.id}">${I('grip')}</span><span class="num">${i + 1}</span><input type="text" class="grow" data-in="topic" data-raw="1" data-id="${t.id}" placeholder="Type a topic…" value="${esc(topicRaw(t))}">${t.a ? `<span class="badge">${I('test')}</span>` : ''}${t.bring ? `<span class="small" style="color:var(--c-res);white-space:nowrap" title="Bring">${I('bag')} ${esc(t.bring)}</span>` : ''}<span class="when">${k ? esc(lessonLabel(k)) : 'No lesson yet'}</span><button class="x" data-act="topic-ins" data-id="${t.id}" title="Add a topic after this one">${I('plus')}</button><button class="x" data-act="topic-del" data-id="${t.id}" title="Delete topic">${I('x')}</button></div>`).join('') : ''}</div>`; }).join('')}</div>`;
+  <div id="seqlist">${order.map(g => { const label = g === '__none' ? 'Not scheduled yet' : terms.find(t => t.id === g).name; return `<div class="termgrp">${termHead(g, label, groups[g].filter(x => x.t.t).length + ' topics')}${termIsOpen(g) ? groups[g].map(({ t, i, k }) => `<div class="seq-row${wkShade(k)}" data-id="${t.id}"><span class="handle" data-drag="${t.id}">${I('grip')}</span><span class="num">${i + 1}</span><input type="text" class="grow" data-in="topic" data-raw="1" data-id="${t.id}" placeholder="Type a topic…" value="${esc(t.t)}">${t.a ? `<span class="badge">${I('test')} ${esc(t.a)} <button class="x" data-act="topic-a-del" data-id="${t.id}" title="Remove assessment" style="padding:0 2px">${I('x')}</button></span>` : ''}${bringsOf(t).length ? `<span class="small" style="color:var(--c-res);white-space:nowrap" title="Bring">${I('bag')} ${esc(bringsOf(t).join(', '))}</span>` : ''}<span class="when">${k ? esc(lessonLabel(k)) : 'No lesson yet'}</span><button class="x" data-act="topic-ins" data-id="${t.id}" title="Add a topic after this one">${I('plus')}</button><button class="x" data-act="topic-del" data-id="${t.id}" title="Delete topic">${I('x')}</button></div>`).join('') : ''}</div>`; }).join('')}</div>`;
 }
 function lessonByLesson(cid, c, a, terms) {
   if (!terms.length) return '<p class="muted">Add your term dates first.</p>';
@@ -2257,9 +2300,12 @@ function lessonByLesson(cid, c, a, terms) {
     if (l.cancelled) return `<div class="seq-row${wkShade(sl.key)}" style="opacity:.6"><span class="handle"></span>${when}<span class="grow"><em>${esc(offLabel(l))}</em></span><button class="btn sm" data-act="cancel-lesson" data-v="${sl.key}">Restore</button></div>`;
     if (l.ownTopic) return `<div class="seq-row${wkShade(sl.key)}"><span class="handle">${I('star')}</span>${when}<span class="grow">${esc(l.ownTopic)}</span></div>`;
     if (m && m.shared) return `<div class="seq-row${wkShade(sl.key)}" style="opacity:.75"><span class="handle"></span>${when}<span class="grow small muted">Double lesson – same topic as ${esc(rowOf(keyRow(m.shared)).label)}</span></div>`;
-    if (m) { const t = m.t; return `<div class="seq-row${wkShade(sl.key)}" data-id="${t.id}"><span class="handle" data-drag="${t.id}">${I('grip')}</span>${when}<span class="num">${m.i + 1}</span><span class="grow" style="font-weight:700;color:var(--c-topic)">${esc(t.t || '—')}</span>${(l.assessment || t.a) ? `<span class="badge">${I('test')} ${esc(l.assessment || t.a)}</span>` : ''}<button class="x" data-act="lbl-add" data-id="${t.id}" title="Add homework or something to bring">${I('plus')}</button></div>
-      ${t.bring || (t.hw || []).length ? `<div class="row" style="margin:-2px 0 6px 40px;gap:6px">${t.bring ? `<span class="chip small" style="color:var(--c-res)">${I('bag')} ${esc(t.bring)} <button class="x" data-act="tb-del" data-id="${t.id}" title="Remove bring item">${I('x')}</button></span>` : ''}${(t.hw || []).map(hh => `<span class="chip small" style="color:var(--c-set)">${I('pencil')} ${esc(hh.text)} <button class="x" data-act="thw-del" data-tid="${t.id}" data-id="${hh.id}" title="Remove homework">${I('x')}</button></span>`).join('')}</div>` : ''}
-      ${S.ui.lblAdd === t.id ? `<form class="clsrow" data-form="lbl-save" style="margin:0 0 8px 40px"><span class="seg"><button type="button" class="${(S.ui.lblKind || 'hw') === 'hw' ? 'on' : ''}" data-act="lbl-kind" data-v="hw">${I('pencil')} Homework Set</button><button type="button" class="${S.ui.lblKind === 'bring' ? 'on' : ''}" data-act="lbl-kind" data-v="bring">${I('bag')} Something to Bring</button></span><div class="row nowrap" style="margin-top:6px"><input type="text" id="lbl-text" class="grow" placeholder="${S.ui.lblKind === 'bring' ? 'e.g. Laptops' : 'e.g. Worksheet 2'}" autocomplete="off"><button type="button" class="btn pri sm" data-act="lbl-save">Add</button></div></form>` : ''}`; }
+    if (m) { const t = m.t; return `<div class="seq-row${wkShade(sl.key)}" data-id="${t.id}"><span class="handle" data-drag="${t.id}">${I('grip')}</span>${when}<span class="num">${m.i + 1}</span><span class="grow" style="font-weight:700;color:var(--c-topic)">${esc(t.t || '—')}</span>${(l.assessment || t.a) ? `<span class="badge">${I('test')} ${esc(l.assessment || t.a)} <button class="x" data-act="${l.assessment ? 'lesson-a-del' : 'topic-a-del'}" data-id="${t.id}" data-key="${sl.key}" title="Remove assessment" style="padding:0 2px">${I('x')}</button></span>` : ''}${asmtsOn(keyDate(sl.key), keyRow(sl.key)).filter(x => !x.cid || x.cid === cid).map(x => asmtBanner(x, true, true)).join('')}<button class="x" data-act="lbl-add" data-id="${t.id}" title="Add homework or something to bring">${I('plus')}</button></div>
+      ${bringsOf(t).length || (t.hw || []).length ? `<div class="row" style="margin:-2px 0 6px 40px;gap:6px">${bringsOf(t).map((b, bi) => `<span class="chip small" style="color:var(--c-res)">${I('bag')} ${esc(b)} <button class="x" data-act="tb-del" data-id="${t.id}" data-v="${bi}" title="Remove bring item">${I('x')}</button></span>`).join('')}${(t.hw || []).map(hh => `<span class="chip small" style="color:var(--c-set)">${I('pencil')} ${esc(hh.text)}${hh.due ? ` <span class="hint">(${hh.due === 'later' ? 'due date to set' : hh.due === 'next' ? 'due next lesson' : 'due ' + fmtD(hh.due.slice(0, 10))})</span>` : ''} <button class="x" data-act="thw-del" data-tid="${t.id}" data-id="${hh.id}" title="Remove homework">${I('x')}</button></span>`).join('')}</div>` : ''}
+      ${S.ui.lblAdd === t.id ? `<form class="clsrow" data-form="lbl-save" style="margin:0 0 8px 40px"><span class="seg"><button type="button" class="${(S.ui.lblKind || 'hw') === 'hw' ? 'on' : ''}" data-act="lbl-kind" data-v="hw">${I('pencil')} Homework Set</button><button type="button" class="${S.ui.lblKind === 'bring' ? 'on' : ''}" data-act="lbl-kind" data-v="bring">${I('bag')} Something to Bring</button></span>
+        <textarea id="lbl-text" rows="2" style="width:100%;margin-top:6px;min-height:52px" placeholder="${S.ui.lblKind === 'bring' ? 'One item per line, e.g.\nLaptops\nCalculators' : 'One homework task per line, e.g.\nWorksheet 2\nRead pages 10–12'}"></textarea>
+        ${(S.ui.lblKind || 'hw') === 'hw' ? dueChooser('lbl', S.ui.lblDue || '', S.ui.lblDueDate || '') : ''}
+        <div class="row" style="margin-top:6px"><span class="hint grow">Each line becomes its own item.</span><button type="button" class="btn pri sm" data-act="lbl-save">Add</button></div></form>` : ''}`; }
     return `<div class="seq-row${wkShade(sl.key)}"><span class="handle"></span>${when}<span class="grow muted"><em>No topic – add one in Topic Overview</em></span></div>`;
   }).join('') : ''}</div>`; }).join('')}</div>`;
 }
@@ -2487,6 +2533,15 @@ function renderModal() {
     ${f.mode !== 'time' && mine.length ? `<div class="row" style="margin-top:6px"><span class="small muted">${esc(cls(f.cid).name)} that day:</span>${mine.map(x => `<button class="chip ${f.row === x.row.id ? 'on' : ''}" data-act="asmt-row" data-v="${x.row.id}">${esc(x.row.label)}</button>`).join('')}</div>` : f.cid && f.date ? `<div class="hint">No ${esc(cls(f.cid).name)} lesson that day – pick any time, e.g. After School or another period.</div>` : ''}
     <label class="small" style="font-weight:800;margin-top:10px;display:block">Notes (optional – just for you, not in the student email)</label><input type="text" id="asmt-notes" style="width:100%" data-chg="asmtf" data-f="notes" placeholder="e.g. Room 12, bring calculators" value="${esc(f.notes || '')}" autocomplete="off">
     <div class="row" style="margin-top:14px">${f.id ? `<button class="btn danger" data-act="asmt-del" data-id="${f.id}">${I('x')} Delete</button>` : ''}<span class="grow"></span><button class="btn" data-act="close-modal">Cancel</button><button class="btn asbtn" data-act="asmt-save">${I('check')} Save Assessment</button></div>`;
+  }
+  if (md.type === 'hwconf') {
+    const live = hwConflicts(), list = md.list.filter(x => live.some(y => y.hid === x.hid));
+    if (!list.length) { setTimeout(() => { S.ui.modal = null; render(); }, 0); return ''; }
+    return `<h2 class="hf" style="font-size:1.7em">${I('alert')} Check homework due dates</h2><p>These topics have moved, so their homework is now due on or before the lesson it's set in.</p>
+    ${list.map(x => `<div class="clsrow" style="background:var(--paper)"><div><strong style="color:var(--c-set)">${esc(x.text)}</strong> <span class="small muted">· ${esc((cls(x.cid) || {}).name || '')} · ${esc(x.topic)}</span></div>
+      <div class="small">Due ${fmtD(keyDate(x.due))}, but the lesson is now ${esc(lessonLabel(x.lesson))}.</div>
+      <div class="row" style="margin-top:6px;gap:6px"><input type="date" id="hc-${x.hid}" value="${addDays(mondayOf(keyDate(x.lesson)), 7)}"><button class="btn sm pri" data-act="hwconf" data-v="date" data-id="${x.hid}" data-cid="${x.cid}">Set Date</button><button class="btn sm" data-act="hwconf" data-v="" data-id="${x.hid}" data-cid="${x.cid}">First Lesson Next Week</button><button class="btn sm" data-act="hwconf" data-v="later" data-id="${x.hid}" data-cid="${x.cid}">Change Later</button></div></div>`).join('')}
+    <div class="row" style="margin-top:10px"><span class="grow"></span><button class="btn" data-act="hwconf-skip">Leave for Now</button></div>`;
   }
   if (md.type === 'topicdel') { const t = (seqDoc(S.ui.topicCls).topics || []).find(x => x.id === md.id) || {}, lw = linkedWith(S.ui.topicCls); return `<h2 class="hf" style="font-size:1.8em">Delete this topic?</h2><p>“${esc(t.t || 'Untitled')}” will be removed from ${esc(cls(S.ui.topicCls).name)}, and later topics move up one lesson.</p>
     <label class="chk" style="display:flex;margin:10px 0"><input type="checkbox" data-act="td-also" ${md.also ? 'checked' : ''}> Also delete it from ${esc(lw.map(x => x.name).join(', '))}</label>
@@ -2727,17 +2782,33 @@ function handleAct(a, v, id, el, key) {
     case 'add-res': case 'add-item': {
       const list = a === 'add-res' ? 'res' : el.dataset.list, inp = $('#add-' + list); const txt = inp ? inp.value.trim() : '';
       if (!txt) { inp && inp.focus(); break; }
-      updL(key, l => {
+      const lines = list === 'hwSet' || list === 'hwCheck' ? splitItems(txt) : [txt], due = list === 'hwSet' ? dueValue('sh') : '';
+      lines.forEach(line => updL(key, l => {
         l[list] = l[list] || [];
-        const it = { id: nid(), text: txt };
+        const it = { id: nid(), text: line };
         if (list === 'res') it.type = v || 'print';
-        if (list === 'hwSet') { it.due = ''; if (hwToTopic(key, it)) return; }
+        if (list === 'hwSet') { it.due = due; if (hwToTopic(key, it)) return; }
         l[list].push(it);
-      });
+      }));
       inp.value = ''; break;
     }
     case 'thw-del': forGroup(key && S.ui.sheet ? classOfKey(key) : S.ui.topicCls, sd => { const t = sd.topics.find(x => x.id === el.dataset.tid); if (t) t.hw = (t.hw || []).filter(x => x.id !== id); }); break;
-    case 'tb-del': forGroup(S.ui.topicCls, sd => { const t = sd.topics.find(x => x.id === id); if (t) delete t.bring; }); break;
+    case 'postpone': {
+      const kind = el.dataset.kind, nextWk = addDays(targetWeek(), 7);
+      if (kind === 'ext') { let item; upd('W_' + v, w => { item = (w.extras || []).find(x => x.id === id); w.extras = (w.extras || []).filter(x => x.id !== id); }); if (item) upd('W_' + nextWk, w => { w.extras = [...(w.extras || []), { ...item, done: false }]; }); toast('Moved to next week'); break; }
+      const from = el.dataset.key; let item; updL(from, l => { item = (l.res || []).find(x => x.id === id); l.res = (l.res || []).filter(x => x.id !== id); });
+      if (!item) break;
+      let to = '';
+      if (kind === 'les') { const cid = classOfKey(from); to = (realAll(cid) || []).find(k => keyDate(k) >= nextWk) || ''; }
+      if (!to) to = addDays(keyDate(from), 7) + '_day';
+      updL(to, l => { l.res = [...(l.res || []), { ...item, done: false }]; }); toast('Moved to ' + (to.endsWith('_day') ? fmtD(keyDate(to)) : lessonLabel(to))); break;
+    }
+    case 'out-chip': { const t2 = el.dataset.t; updL(el.dataset.key, l => { l.outs = l.outs || []; let o = l.outs.find(x => x.title === t2); if (!o) { o = { id: nid(), title: t2, codes: [] }; l.outs.push(o); } const i2 = o.codes.findIndex(x => x.c === v); if (i2 >= 0) o.codes.splice(i2, 1); else o.codes.push({ c: v, done: false }); if (!o.codes.length) l.outs = l.outs.filter(x => x !== o); }); return 'partial-render'; }
+    case 'topic-a-del': forGroup(S.ui.topicCls || classOfKey(el.dataset.key), sd => { const t = sd.topics.find(x => x.id === id); if (t) delete t.a; }); toast('Assessment removed'); break;
+    case 'lesson-a-del': updL(el.dataset.key, l => { delete l.assessment; }); toast('Assessment removed'); break;
+    case 'hwconf': { const nv = v === 'date' ? (($('#hc-' + id) || {}).value || '') : v; if (v === 'date' && !nv) { toast('Choose a date first'); break; } setTopicHwDue(el.dataset.cid, id, nv); toast(nv === 'later' ? 'Added a reminder to your To Do List' : 'Due date updated'); break; }
+    case 'hwconf-skip': { S.confAck = S.confAck || new Set(); (S.ui.modal.list || []).forEach(x => S.confAck.add(x.hid + x.due + x.lesson)); S.ui.modal = null; break; }
+    case 'tb-del': forGroup(S.ui.topicCls, sd => { const t = sd.topics.find(x => x.id === id); if (!t) return; const b = bringsOf(t); b.splice(+v || 0, 1); if (b.length) t.bring = b; else delete t.bring; }); break;
     case 'list-del': listUpd(key, el.dataset.list, id, (it, l) => { l[el.dataset.list] = l[el.dataset.list].filter(x => x.id !== id); }); break;
     case 'res-toggle': if (id.startsWith('tb_')) updL(el.dataset.key, l => { l.tbDone = l.tbDone || {}; l.tbDone[id.slice(3)] = !l.tbDone[id.slice(3)]; }); else listUpd(el.dataset.key, 'res', id, it => { it.done = !it.done; }); checkConfetti(); break;
     case 'chk-toggle': {
@@ -2842,7 +2913,7 @@ function handleAct(a, v, id, el, key) {
       });
       S.ui.modal = null; S.ui.asf = null; toast(`Assessment saved – ${fmtD(rec.date)}`); break;
     }
-    case 'asmt-del': { const a = (cfg().assessments || []).find(x => x.id === id) || {}, grp = a.gid && S.ui.asf && S.ui.asf.alsoLinked !== false ? (cfg().assessments || []).filter(x => x.gid === a.gid && x.id !== id) : [];
+    case 'asmt-del': { const a = (cfg().assessments || []).find(x => x.id === id) || {}, grp = a.gid && S.ui.modal && S.ui.modal.type === 'asform' && S.ui.asf && S.ui.asf.alsoLinked !== false ? (cfg().assessments || []).filter(x => x.gid === a.gid && x.id !== id) : [];
       confirmBox('Delete this assessment?', `It will be removed from the planner and from class emails${grp.length ? `, including for ${grp.map(x => (cls(x.cid) || {}).name).join(', ')}` : ''}.`, 'Delete', () => { const gone = new Set([id, ...grp.map(x => x.id)]); updCfg(c => { c.assessments = (c.assessments || []).filter(x => !gone.has(x.id)); }); S.ui.asf = null; S.ui.modal = null; }); break; }
     case 'td-also': S.ui.modal.also = !S.ui.modal.also; break;
     case 'td-go': { const md = S.ui.modal, del = sd => { sd.topics = sd.topics.filter(t => t.id !== md.id); }; if (md.also) forGroup(S.ui.topicCls, del); else updSeq(S.ui.topicCls, del); S.ui.modal = null; toast(md.also ? 'Deleted from all linked classes' : 'Deleted from ' + cls(S.ui.topicCls).name); break; }
@@ -2850,9 +2921,9 @@ function handleAct(a, v, id, el, key) {
     case 'term-toggle': { S.ui.termOpen = S.ui.termOpen || {}; S.ui.termOpen[v] = !termIsOpen(v); break; }
     case 'lbl-add': S.ui.lblAdd = S.ui.lblAdd === id ? null : id; S.ui.lblKind = S.ui.lblKind || 'hw'; setTimeout(() => { const x = $('#lbl-text'); if (x) x.focus(); }, 40); break;
     case 'lbl-kind': S.ui.lblKind = v; break;
-    case 'lbl-save': { const inp = $('#lbl-text'), x = (inp.value || '').trim(); if (!x) { inp.focus(); break; } const tid = S.ui.lblAdd, kind = S.ui.lblKind || 'hw', hid = nid();
-      forGroup(S.ui.topicCls, sd => { const t = sd.topics.find(y => y.id === tid); if (!t) return; if (kind === 'bring') t.bring = x; else { t.hw = t.hw || []; t.hw.push({ id: hid, text: x }); } });
-      inp.value = ''; S.ui.lblAdd = null; toast(kind === 'bring' ? 'Bring item added' : 'Homework added'); break; }
+    case 'lbl-save': { const inp = $('#lbl-text'), xs = splitItems(inp.value); if (!xs.length) { inp.focus(); break; } const tid = S.ui.lblAdd, kind = S.ui.lblKind || 'hw', due = dueValue('lbl'), ids = xs.map(() => nid());
+      forGroup(S.ui.topicCls, sd => { const t = sd.topics.find(y => y.id === tid); if (!t) return; if (kind === 'bring') t.bring = [...bringsOf(t), ...xs]; else { t.hw = t.hw || []; xs.forEach((x, i) => t.hw.push({ id: ids[i], text: x, due })); } });
+      inp.value = ''; toast(`${xs.length} ${kind === 'bring' ? 'bring item' : 'homework task'}${xs.length === 1 ? '' : 's'} added`); break; }
     case 'topic-term': S.ui.topicTerm = (S.ui.topicTerm || 0) + +v; break;
     case 'code-add': { const inp = $('#code-new'), xs = (inp.value || '').split(/[,\n]/).map(x => x.trim()).filter(Boolean); if (!xs.length) break; updCfg(c => { const k = c.classes.find(x => x.id === S.ui.topicCls); k.codes = [...new Set([...(k.codes || []), ...xs])]; }); inp.value = ''; break; }
     case 'code-del': updCfg(c => { const k = c.classes.find(x => x.id === S.ui.topicCls); k.codes = (k.codes || []).filter(x => x !== v); }); break;
@@ -2865,8 +2936,8 @@ function handleAct(a, v, id, el, key) {
     case 'topic-add1': {
       const inp = $('#topic-new'), txt = cleanLine(inp.value || ''); if (!txt) { inp.focus(); break; }
       const cid = S.ui.topicCls;
-      const br = (($('#topic-bring') || {}).value || '').trim(), hwt = (($('#topic-hw') || {}).value || '').trim();
-      const obj = { id: nid(), ...parseTopicLine(txt), ...(br ? { bring: br } : {}), ...(hwt ? { hw: [{ id: nid(), text: hwt }] } : {}) };
+      const brs = splitItems(($('#topic-bring') || {}).value), hws = splitItems(($('#topic-hw') || {}).value), tdue = dueValue('tp'), br = brs.length ? brs : '', hwt = hws.length ? hws : '';
+      const obj = { id: nid(), ...parseTopicLine(txt), ...(br ? { bring: br } : {}), ...(hwt ? { hw: hwt.map(x => ({ id: nid(), text: x, due: tdue })) } : {}) };
       if (S.ui.addWhere === 'at' && S.ui.addAt) {
         const at = S.ui.addAt; insertListAt(cid, at, [obj]);
         const ls = assign().all[cid] || []; S.ui.addAt = ls.find(k => keyCmp(k, at) > 0) || at;
@@ -3036,7 +3107,7 @@ document.addEventListener('input', e => {
     case 'L': updL(key, l => { l[f] = v; }); break;
     case 'list': listUpd(key, el.dataset.list, id, it => { it[f] = v; }); break;
     case 'weeknote': upd('W_' + el.dataset.v, w => { w.notes = v; }); break;
-    case 'topic': forGroup((el.dataset.cid || S.ui.topicCls), sd => { const t = sd.topics.find(t => t.id === id); if (t) { if (el.dataset.raw) Object.assign(t, parseTopic(v)); else t.t = v; } }); break;
+    case 'topic': forGroup((el.dataset.cid || S.ui.topicCls), sd => { const t = sd.topics.find(t => t.id === id); if (t) t.t = v; }); break;
     case 'seqstart': updSeq(S.ui.topicCls, sd => { sd.start = v; }); break;
     case 'pin': updL(el.dataset.key, l => { l.ownTopic = v; }); break;
     case 'thw': forGroup(classOfKey(key), sd => { const t = sd.topics.find(x => x.id === el.dataset.tid); const h = t && (t.hw || []).find(x => x.id === id); if (h) h.text = v; }); break;
@@ -3089,8 +3160,8 @@ document.addEventListener('change', e => {
     case 'rowf': updCfg(c => { c.rows.find(r => r.id === id)[f] = v; }); break;
     case 'asf': upd('assess', d => { const t = d.list.find(x => x.id === asTask().id); if (t) t[f] = v; }); break;
     case 'hwdue': {
-      if (v === '__custom') { const today = keyDate(el.dataset.key); if (el.dataset.topic) updL(el.dataset.key, l => { l.hwDue = { ...(l.hwDue || {}), [id]: addDays(today, 7) }; }); else listUpd(el.dataset.key, 'hwSet', id, it => { it.due = addDays(today, 7); }); break; }
-      if (el.dataset.topic) updL(el.dataset.key, l => { l.hwDue = { ...(l.hwDue || {}), [id]: v }; }); else listUpd(el.dataset.key, 'hwSet', id, it => { it.due = v; });
+      const nv = v === '__custom' ? addDays(keyDate(el.dataset.key), 7) : v;
+      if (el.dataset.topic) setTopicHwDue(classOfKey(el.dataset.key), id, nv, el.dataset.key); else listUpd(el.dataset.key, 'hwSet', id, it => { it.due = nv; });
       break;
     }
     case 'tallyterm': S.ui.tallyTerm = v; break;
@@ -3101,6 +3172,7 @@ document.addEventListener('change', e => {
     case 'newtopic': if (v.trim()) { const k = el.dataset.key; embedTopic(classOfKey(k), k, v); } break;
     case 'seqstartkey': S.ui.seqStart = v; return 'partial';
     case 'addat': S.ui.addAt = v; return 'partial';
+    case 'duemode': { const p2 = el.dataset.p; S.ui[p2 + 'Due'] = v; const box = el.parentNode; let di = box.querySelector('input[type=date]'); if (v === 'date' && !di) { di = document.createElement('input'); di.type = 'date'; di.id = p2 + '-duedate'; box.appendChild(di); } else if (v !== 'date' && di) di.remove(); return 'partial'; }
     case 'clsstudents': updCfg(c => { const k = c.classes.find(x => x.id === id); if (k) { if (+v > 0) k.students = Math.round(+v); else delete k.students; } }); break;
     case 'asmtf': S.ui.asf = S.ui.asf || {}; S.ui.asf[f] = v; if (f === 'title' || f === 'notes') return 'partial'; break;
     case 'perfn': updCfg(c => { const k = c.classes.find(x => x.id === id); if (k) { if (+v) k.perFn = +v; else delete k.perFn; } }); break;
@@ -3231,7 +3303,7 @@ document.addEventListener('pointerdown', e => {
 const PLANNER_URL = 'https://claude.ai/artifact/KU9QgvPMBsXD465MuK5tdR';
 // Website version only: the Google OAuth client ID (leave empty for the claude.ai version)
 const GOOGLE_CLIENT_ID = '744170181576-ngotngduq5a2kh882pfi2dbgid03din1.apps.googleusercontent.com';
-const BUILD = '2026-11-21y', WIPE_ON_NEW_BUILD = false;
+const BUILD = '2026-11-22c', WIPE_ON_NEW_BUILD = false;
 function wipeAll() { Object.keys(S.docs).forEach(k => { delete S.docs[k]; Store.save(k); }); try { Object.keys(localStorage).filter(k => k.startsWith('lp_dis_')).forEach(k => localStorage.removeItem(k)); } catch (e) { } }
 function addHeadstart(c) {
   if (c.hs26 || (c.terms || []).some(t => /headstart/i.test(t.name))) { c.hs26 = true; return false; }
