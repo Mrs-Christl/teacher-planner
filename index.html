@@ -666,10 +666,28 @@ const Store = {
 const GD = {
   token: '', exp: 0, client: null, fileId: '', remoteMod: '', pulled: false, pushing: false, again: false, timer: null, waiters: [], needAuth: false,
   meta: {}, base: {}, synced: {},
-  cacheLoad() { try { const c = JSON.parse(localStorage.getItem('lp_gd_cache') || 'null'); if (c && c.docs) { this.meta = c.meta || {}; this.base = c.base || {}; this.synced = c.synced || {}; this.fileId = c.fileId || ''; this.remoteMod = c.remoteMod || ''; return c.docs; } } catch (e) { } return null; },
-  cacheSave() { try { localStorage.setItem('lp_gd_cache', JSON.stringify({ docs: S.docs, meta: this.meta, base: this.base, synced: this.synced, fileId: this.fileId, remoteMod: this.remoteMod })); } catch (e) { setStatus('Could not save on this device'); } },
+  // The copy kept on this device lives in IndexedDB (lots of room), so the planner opens straight away next time
+  idb() { if (this._db) return this._db; this._db = new Promise((res, rej) => { try { const rq = indexedDB.open('lesson-planner', 1); rq.onupgradeneeded = () => rq.result.createObjectStore('kv'); rq.onsuccess = () => res(rq.result); rq.onerror = () => rej(rq.error); } catch (e) { rej(e); } }); return this._db; },
+  async idbGet(k) { const db = await this.idb(); return new Promise((res, rej) => { const rq = db.transaction('kv').objectStore('kv').get(k); rq.onsuccess = () => res(rq.result); rq.onerror = () => rej(rq.error); }); },
+  async idbSet(k, v) { const db = await this.idb(); return new Promise((res, rej) => { const tx = db.transaction('kv', 'readwrite'); tx.objectStore('kv').put(v, k); tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); }); },
+  async idbDel(k) { try { const db = await this.idb(); db.transaction('kv', 'readwrite').objectStore('kv').delete(k); } catch (e) { } },
+  useCache(c) { if (c && c.docs) { this.meta = c.meta || {}; this.base = c.base || {}; this.synced = c.synced || {}; this.fileId = c.fileId || ''; this.remoteMod = c.remoteMod || ''; return c.docs; } return null; },
+  async cacheLoad() {
+    try { const c = await this.idbGet('cache'); if (c && c.docs) return this.useCache(c); } catch (e) { }
+    try { const c = JSON.parse(localStorage.getItem('lp_gd_cache') || 'null'); if (c && c.docs) return this.useCache(c); } catch (e) { }
+    return null;
+  },
+  cacheSave() {
+    clearTimeout(this._cs);
+    this._cs = setTimeout(async () => {
+      const snap = { docs: clone(S.docs), meta: { ...this.meta }, base: clone(this.base), synced: { ...this.synced }, fileId: this.fileId, remoteMod: this.remoteMod };
+      try { await this.idbSet('cache', snap); localStorage.setItem('lp_gd_has', '1'); try { localStorage.removeItem('lp_gd_cache'); } catch (e) { } }
+      catch (e) { try { localStorage.setItem('lp_gd_cache', JSON.stringify({ ...snap, base: {} })); } catch (e2) { setStatus('Could not save on this device'); } }
+    }, 250);
+  },
   loadGis() { return new Promise((res, rej) => { if (window.google && google.accounts && google.accounts.oauth2) return res(); const sc = document.createElement('script'); sc.src = 'https://accounts.google.com/gsi/client'; sc.async = true; sc.onload = () => res(); sc.onerror = () => rej(new Error('gis')); document.head.appendChild(sc); }); },
   async getToken(interactive) {
+    if (!this.token) { try { const tk = JSON.parse(localStorage.getItem('lp_gd_tok') || 'null'); if (tk && tk.exp > Date.now() + 60000) { this.token = tk.t; this.exp = tk.exp; } } catch (e) { } }
     if (this.token && Date.now() < this.exp - 60000) return this.token;
     await this.loadGis();
     if (!this.client) this.client = google.accounts.oauth2.initTokenClient({ client_id: GOOGLE_CLIENT_ID, scope: 'https://www.googleapis.com/auth/drive.appdata', callback: r => this.gotToken(r), error_callback: e => this.gotToken({ error: e && e.type || 'failed' }) });
@@ -677,13 +695,13 @@ const GD = {
   },
   gotToken(r) {
     const w = this.waiters; this.waiters = [];
-    if (r && r.access_token) { this.token = r.access_token; this.exp = Date.now() + (r.expires_in || 3600) * 1000; this.needAuth = false; localStorage.setItem('lp_gd_user', '1'); gdBanner(); w.forEach(x => x.res(this.token)); }
+    if (r && r.access_token) { this.token = r.access_token; this.exp = Date.now() + (r.expires_in || 3600) * 1000; this.needAuth = false; localStorage.setItem('lp_gd_user', '1'); try { localStorage.setItem('lp_gd_tok', JSON.stringify({ t: this.token, exp: this.exp })); } catch (e) { } gdBanner(); w.forEach(x => x.res(this.token)); }
     else { this.needAuth = true; gdBanner(); w.forEach(x => x.rej(new Error(r && r.error || 'auth'))); }
   },
   async api(url, opt = {}, retry = true) {
     const tok = await this.getToken(false);
     const r = await fetch(url, { ...opt, headers: { ...(opt.headers || {}), Authorization: 'Bearer ' + tok } });
-    if (r.status === 401 && retry) { this.token = ''; return this.api(url, opt, false); }
+    if (r.status === 401 && retry) { this.token = ''; localStorage.removeItem('lp_gd_tok'); return this.api(url, opt, false); }
     if (!r.ok) throw new Error('drive ' + r.status);
     return r;
   },
@@ -766,26 +784,26 @@ const GD = {
     } catch (e) { if (!S.ready) gdGate(true, interactive ? 'Sign-in didn’t finish. Please try again.' : ''); else setStatus('Saved on this device – reconnect to Google'); }
   },
   async syncNow() { if (!this.pulled || this.pushing || this.needAuth) return; try { if (await this.pull()) { S.ver++; render(); } setStatus('Saved to Google Drive'); } catch (e) { } },
-  start() {
+  async start() {
     Store.mode = 'gdrive';
-    const cache = this.cacheLoad();
+    const cache = await this.cacheLoad();
     if (cache && cache.cfg && localStorage.getItem('lp_gd_user')) { S.docs = cache; boot(); this.connect(false); }
-    else gdGate(true);
+    else gdGate(true, '', !!localStorage.getItem('lp_gd_user'));
   },
   async signOut() {
     try { await this.push(); } catch (e) { }
     try { if (this.token && window.google) google.accounts.oauth2.revoke(this.token, () => { }); } catch (e) { }
-    ['lp_gd_cache', 'lp_gd_user', 'lp_gd_snap', 'lp_docs'].forEach(k => localStorage.removeItem(k));
+    ['lp_gd_cache', 'lp_gd_user', 'lp_gd_snap', 'lp_docs', 'lp_gd_tok', 'lp_gd_has'].forEach(k => localStorage.removeItem(k)); await this.idbDel('cache');
     location.reload();
   },
 };
-function gdGate(show, msg) {
+function gdGate(show, msg, back) {
   let g = document.getElementById('gdGate');
   if (!show) { if (g) g.remove(); return; }
   if (!g) { g = document.createElement('div'); g.id = 'gdGate'; document.body.appendChild(g); }
   g.innerHTML = `<div class="gdcard"><div style="font-size:2.4em;color:var(--accent)">${I('book')}</div><h1 class="hf" style="font-size:2.2em;margin:6px 0">Lesson Planner</h1>
     <p>Sign in with your Google account to open your planner. It's saved in a private folder in your own Google Drive that only this planner can use, so it's backed up and syncs between your devices.</p>
-    <button class="btn pri" id="gdSignIn" style="font-size:1.1em;padding:12px 20px">Sign in with Google</button>
+    <button class="btn pri" id="gdSignIn" style="font-size:1.1em;padding:12px 20px">${back ? 'Open My Planner' : 'Sign in with Google'}</button>
     ${msg ? `<p class="small" style="color:#c62828;margin-top:10px">${esc(msg)}</p>` : ''}
     <p class="hint" style="margin-top:14px">${I('lock')} No student names are stored. Nobody else can see your planner. <a href="privacy.html" target="_blank">Privacy policy</a></p></div>`;
   g.querySelector('#gdSignIn').onclick = () => { g.querySelector('#gdSignIn').textContent = 'Signing in…'; GD.connect(true); };
@@ -3303,7 +3321,7 @@ document.addEventListener('pointerdown', e => {
 const PLANNER_URL = 'https://claude.ai/artifact/KU9QgvPMBsXD465MuK5tdR';
 // Website version only: the Google OAuth client ID (leave empty for the claude.ai version)
 const GOOGLE_CLIENT_ID = '744170181576-ngotngduq5a2kh882pfi2dbgid03din1.apps.googleusercontent.com';
-const BUILD = '2026-11-22c', WIPE_ON_NEW_BUILD = false;
+const BUILD = '2026-11-22d', WIPE_ON_NEW_BUILD = false;
 function wipeAll() { Object.keys(S.docs).forEach(k => { delete S.docs[k]; Store.save(k); }); try { Object.keys(localStorage).filter(k => k.startsWith('lp_dis_')).forEach(k => localStorage.removeItem(k)); } catch (e) { } }
 function addHeadstart(c) {
   if (c.hs26 || (c.terms || []).some(t => /headstart/i.test(t.name))) { c.hs26 = true; return false; }
