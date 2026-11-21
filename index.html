@@ -602,7 +602,7 @@ function defaultCfg() {
     rows: DEFAULT_ROWS(),
     classes: [], rooms: [], tt: { A: {}, B: {} }, p0days: { A: [], B: [] }, showRooms: true, duties: [],
     terms: [], events: [], rotationFirst: 'A',
-    theme: { name: 'classic', mode: 'auto', heading: '', body: '', size: 16, paper: '', paperColor: '', board: '', bg: { type: '', color: '', pattern: '', fade: .35 }, tabs: '', accent: '', extras: { verse: false } },
+    theme: { name: 'classic', mode: 'auto', heading: '', body: '', size: 16, paper: '', paperColor: '', board: '', bg: { type: '', color: '', pattern: '', fade: .35 }, tabs: '', accent: '', extras: { mascot: false, outfits: false, stickers: false, seasonal: false, progress: false, verse: false, countdown: false, friday: false, washi: false, clips: false, doodles: false, today: false, confetti: false } },
     cat: null,
     email: { subject: '{class} homework – week of {range}', greeting: 'Dear {class} students,', intro: 'Please see below the homework for the week:', outro: 'This homework is due {due}.', signoff: 'Kind regards,\n{name}' },
     reminders: [
@@ -2459,7 +2459,7 @@ function lessonByLesson(cid, c, a, terms) {
 }
 
 /* ---------- Settings ---------- */
-const SET_SECS = [['look', 'palette', 'Look & Feel'], ['fun', 'party', 'Fun Extras'], ['classes', 'cap', 'Classes & Colours'], ['timetable', 'calendar', 'Timetable'], ['bells', 'bell', 'Bell Times'], ['rooms', 'door', 'Rooms'], ['events', 'flag', 'Holidays & Events'], ['birthdays', 'party', 'Birthdays'], ['terms', 'calendar', 'Terms & Rotation'], ['email', 'mail', 'Email Wording'], ['notes', 'note', 'Reflection Notes'], ['data', 'save', 'Backup & New Year']];
+const SET_SECS = [['look', 'palette', 'Look & Feel'], ['classes', 'cap', 'Classes & Colours'], ['timetable', 'calendar', 'Timetable'], ['bells', 'bell', 'Bell Times'], ['rooms', 'door', 'Rooms'], ['events', 'flag', 'Holidays & Events'], ['birthdays', 'party', 'Birthdays'], ['terms', 'calendar', 'Terms & Rotation'], ['email', 'mail', 'Email Wording'], ['notes', 'note', 'Reflection Notes'], ['data', 'save', 'Backup & New Year']];
 function renderSettings() {
   return `<div class="wkhead"><h1>Settings</h1></div><div class="settings"><nav class="snav">${SET_SECS.map(([k, i, l]) => `<button class="${S.ui.setSec === k ? 'on' : ''}" data-act="setsec" data-v="${k}">${I(i)} ${l}</button>`).join('')}</nav><div>${secHTML(S.ui.setSec)}</div></div>`;
 }
@@ -2481,6 +2481,9 @@ function secHTML(k) {
         return `<div class="pv" style="background:${ld}"><span style="background-color:${lp};background-image:${tx.img};background-size:${tx.size}"></span><span style="background:${db};background-image:${textureCSS(v.darkPaper || v.paper, true, false).img}"></span><span style="background:${v.light.accent};flex:.4"></span></div>`; };
       return `<div class="card"><h2>Theme</h2><p class="hint">Each theme dresses the whole planner. It uses paper in light mode and a chalkboard in dark mode. You can change any part of it below.</p>
         <div class="themecards">${Object.entries(THEMES).filter(([k2, v]) => !v.hidden || t.name === k2).map(([k2, v]) => `<button class="tcard ${t.name === k2 ? 'on' : ''}" data-act="theme" data-v="${k2}">${themePrev(k2, v)}<div class="nm" style="font-family:${fontStack(v.h)}">${v.name}</div>${v.prefer ? `<div class="small muted">${v.prefer === 'dark' ? 'Made for dark mode' : 'Made for light mode'}</div>` : ''}</button>`).join('')}</div></div>
+      <div class="card"><h2>Fun Extras</h2><p class="hint">Turn the little extras on or off. Your choices stay the same when you change theme.</p>
+        ${Object.entries(EXTRAS).map(([k2, l]) => `<label class="chk" style="display:flex;margin:6px 0"><input type="checkbox" data-act="look-extra" data-v="${k2}" ${T.extras[k2] ? 'checked' : ''}> ${l}</label>`).join('')}
+        <div class="row" style="margin-top:6px"><span class="small" style="font-weight:800">Confetti style</span><select data-chg="confstyle">${Object.entries(CONFETTI).map(([k2, l]) => `<option value="${k2}" ${(cfg().theme.confetti || 'theme') === k2 ? 'selected' : ''}>${l}</option>`).join('')}</select><button class="btn sm" data-act="conf-try">Try it</button></div></div>
       <div class="card"><h2>Class Colours</h2><p class="hint">Each theme has its own colour palette for your classes. Choose “Theme colours” in Classes & Colours and your classes will change colour whenever you change theme.</p><div class="row"><span class="row nowrap" style="gap:4px">${themeClassPal(th).map(c => `<span class="dot" style="width:18px;height:18px;background:${c}"></span>`).join('')}</span>${C.palName === 'Theme' ? '<span class="small muted">Your classes are using these colours.</span>' : `<button class="btn sm" data-act="palette" data-v="Theme">Use These for My Classes</button>`}</div></div>
       <div class="card"><h2>Light & Dark</h2>
         <div class="chips">${chip('look-mode', 'auto', t.mode || 'auto', 'Automatic (matches my device)')}${chip('look-mode', 'light', t.mode, 'Always Light')}${chip('look-mode', 'dark', t.mode, 'Always Dark')}</div>
@@ -2559,9 +2562,6 @@ function secHTML(k) {
       <div class="row" style="margin-top:8px"><button class="btn" data-act="tt-copy" data-v="${wk}">Copy Week ${wk} to Week ${flip(wk)}</button>${!(C.classes || []).length ? '<span class="hint">Add classes first.</span>' : ''}</div></div>`;
     }
     case 'terms': return termDatesCard() + rotationCard();
-    case 'fun': { const T = resolveTheme(); return `<div class="card"><h2>Fun Extras</h2><p class="hint">Turn the little extras on or off. Your choices stay the same when you change theme.</p>
-        ${Object.entries(EXTRAS).map(([k2, l]) => `<label class="chk" style="display:flex;margin:6px 0"><input type="checkbox" data-act="look-extra" data-v="${k2}" ${T.extras[k2] ? 'checked' : ''}> ${l}</label>`).join('')}
-        <div class="row" style="margin-top:6px"><span class="small" style="font-weight:800">Confetti style</span><select data-chg="confstyle">${Object.entries(CONFETTI).map(([k2, l]) => `<option value="${k2}" ${(cfg().theme.confetti || 'theme') === k2 ? 'selected' : ''}>${l}</option>`).join('')}</select><button class="btn sm" data-act="conf-try">Try it</button></div></div>`; }
     case 'birthdays': { const bl = [...(C.birthdays || [])].sort((a, b) => (a.md || '') < (b.md || '') ? -1 : 1);
       return `<div class="card"><h2>Birthdays</h2><p class="hint">${I('lock')} Use initials, codes or first names for colleagues only – no full student names. A little cake shows on the day in your planner, and birthdays appear on that week's To Do List.</p>
         <form class="row" data-form="bday-add" style="margin:8px 0"><input type="text" id="bday-who" class="grow" placeholder="Who? e.g. JS (7B), Mrs L" autocomplete="off"><input type="number" id="bday-d" min="1" max="31" placeholder="Day" style="width:80px"><select id="bday-m">${['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'].map((mn, i) => `<option value="${pad(i + 1)}">${mn}</option>`).join('')}</select><button type="button" class="btn pri" data-act="bday-add" data-keepfocus>${I('plus')} Add</button></form>
@@ -3462,7 +3462,7 @@ document.addEventListener('pointerdown', e => {
 const PLANNER_URL = 'https://claude.ai/artifact/KU9QgvPMBsXD465MuK5tdR';
 // Website version only: the Google OAuth client ID (leave empty for the claude.ai version)
 const GOOGLE_CLIENT_ID = '744170181576-ngotngduq5a2kh882pfi2dbgid03din1.apps.googleusercontent.com';
-const BUILD = '2026-11-22j', WIPE_ON_NEW_BUILD = false;
+const BUILD = '2026-11-22k', WIPE_ON_NEW_BUILD = false;
 function wipeAll() { Object.keys(S.docs).forEach(k => { delete S.docs[k]; Store.save(k); }); try { Object.keys(localStorage).filter(k => k.startsWith('lp_dis_')).forEach(k => localStorage.removeItem(k)); } catch (e) { } }
 function addHeadstart(c) {
   if (c.hs26 || (c.terms || []).some(t => /headstart/i.test(t.name))) { c.hs26 = true; return false; }
