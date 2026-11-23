@@ -159,6 +159,12 @@ h1,h2,h3,.hf{font-family:var(--hfont);font-weight:700;margin:0}
 .gdcard{max-width:440px;text-align:center;background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:28px;box-shadow:0 10px 30px rgba(0,0,0,.15)}
 #gdBanner{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:9000;display:flex;gap:10px;align-items:center;background:#fff3cd;color:#5c4400;border:2px solid #e0b100;border-radius:12px;padding:8px 12px;box-shadow:0 6px 18px rgba(0,0,0,.2);font-size:.9em;max-width:94vw}
 .pampas{position:absolute;pointer-events:none;z-index:0}
+.daycell{text-align:left;cursor:default}.daycell .ch{display:flex;align-items:center;gap:6px;padding:6px 10px}
+.dsec{margin:6px 0;border-radius:8px;background:rgba(255,255,255,.55);border:1px solid rgba(0,0,0,.12)}
+.dkcell .dsec{background:rgba(0,0,0,.18);border-color:rgba(255,255,255,.25)}
+.dsec summary{cursor:pointer;font-weight:800;font-size:.85em;padding:6px 10px;list-style-position:inside}
+.dsec .dsb{padding:0 10px 8px}
+.ev.asday{background:#c62828;color:#fff;font-weight:800;box-shadow:0 0 0 2px #fff}
 .ev.bday{background:#ff8fab;color:#5a1630}
 .tprog{margin:4px 8px 8px;padding-top:16px}
 .tprog-bar{position:relative;height:10px;border-radius:999px;background:var(--brkbg,var(--paper2));border:1px solid var(--line2,var(--line))}
@@ -206,6 +212,9 @@ h1,h2,h3,.hf{font-family:var(--hfont);font-weight:700;margin:0}
 .ln{display:flex;gap:5px;align-items:flex-start}
 .ln .ic{flex:none;width:1.1em;text-align:center}
 .ln.res{color:var(--c-res)} .ln.chk{color:var(--c-check)} .ln.set{color:var(--c-set)}
+.ln.res .ic{border-radius:4px;color:#fff!important;display:inline-grid;place-items:center;padding:1px}
+.ln.res.r-print .ic{background:#3f57d6}.ln.res.r-bring .ic{background:#c46a10}.ln.res.r-upload .ic{background:#12847a}.ln.res.r-todo .ic{background:#7a4fb5}
+.ln.res.r-print{color:#2f45b5}.ln.res.r-bring{color:#9a520a}.ln.res.r-upload{color:#0d6b63}.ln.res.r-todo{color:#5f3a92}
 .ln.done{text-decoration:line-through;opacity:.55}
 .cell.cancel{background:repeating-linear-gradient(135deg,var(--paper) 0 9px,var(--paper2) 9px 18px)}
 .cell.cancel .cb{opacity:.6}
@@ -498,12 +507,10 @@ const PALETTES = {
   'Pastel': ['#f8c8dc', '#c6def1', '#c9e4de', '#faedcb', '#dbcdf0', '#f7d9c4', '#bfe3c0', '#f2c6de'],
   'Bright Rainbow': ['#ff595e', '#ff924c', '#ffca3a', '#8ac926', '#1982c4', '#6a4c93', '#ff66c4', '#00c2a8'],
   'Muted Tones': ['#9aa9c2', '#b39cb8', '#c99a9a', '#a3b9a5', '#c9b88a', '#8fb3b8', '#b8a3c9', '#a8a8a8'],
-  'Muted Earthy': ['#b5a28a', '#a4ac86', '#c2a383', '#8f9e8b', '#c9ad8e', '#a99582', '#9da38b', '#bfa89e'],
-  'Neutral (Peachy Keen)': ['#ffcdb2', '#ffb4a2', '#e5989b', '#b5838d', '#ffe5d9', '#f9dcc4', '#fec89a', '#d8e2dc'],
-  'Dark Earthy': ['#6b4f3a', '#5c6b4f', '#7a5c45', '#4f5d5c', '#8a6a4f', '#5e4b56', '#6f6a4f', '#4d4036'],
-  'Colour-blind Safe': ['#E69F00', '#56B4E9', '#009E73', '#F0E442', '#0072B2', '#D55E00', '#CC79A7', '#999999'],
+  'Neutral': ['#ffcdb2', '#ffb4a2', '#e5989b', '#b5838d', '#ffe5d9', '#f9dcc4', '#fec89a', '#d8e2dc'],
 };
-const palette = name => name === 'Custom' ? (cfg().customPal || PALETTES['Pastel']) : name === 'Theme' ? themeClassPal(THEMES[cfg().theme.name] || THEMES.classic) : (PALETTES[name] || PALETTES['Pastel']);
+const palette = name => name === 'Neutral (Peachy Keen)' ? PALETTES['Neutral'] : palette2(name);
+const palette2 = name => name === 'Custom' ? (cfg().customPal || PALETTES['Pastel']) : name === 'Theme' ? themeClassPal(THEMES[cfg().theme.name] || THEMES.classic) : (PALETTES[name] || PALETTES['Pastel']);
 /* Simple line icons (no emoji) */
 const IC = {
   book: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>',
@@ -623,6 +630,10 @@ const S = {
   docs: {}, ver: 0, ready: false,
   ui: { tab: 'planner', week: null, view: 'week', day: 1, panel: true, offset: 0, setSec: 'look', topicCls: null, printFilter: 'all', sheet: null, modal: null },
 };
+// Remember how you like to view things (daily/weekly, open/closed sections) on this device
+const UI_KEEP = ['view', 'dayOpen', 'termOpen', 'topicView', 'hwTab', 'ckTab', 'printFilter', 'setSec', 'qaType'];
+function saveUi() { try { const o = {}; UI_KEEP.forEach(k => { if (S.ui[k] !== undefined) o[k] = S.ui[k]; }); localStorage.setItem('lp_ui', JSON.stringify(o)); } catch (e) { } }
+try { Object.assign(S.ui, JSON.parse(localStorage.getItem('lp_ui') || '{}')); } catch (e) { }
 const Store = {
   mode: 'connecting', col: null, dirty: new Set(), timers: {}, inflight: {}, again: {}, status: '',
   async init() {
@@ -961,7 +972,8 @@ function seqKey(cid) {
     const leader = {}; cs.forEach(c => { const r = find(c.id); if (!leader[r]) leader[r] = c.id; }); const out = {}; cs.forEach(c => out[c.id] = leader[find(c.id)]); return out;
   })[cid] || cid;
 }
-const linkedWith = cid => (cfg().classes || []).filter(c => c.id !== cid && seqKey(c.id) === seqKey(cid));
+// Linking classes has been switched off – each class has its own plan (use "Copy to Another Class" instead)
+const linkedWith = cid => [];
 function getStart(d, cid) { const st = (d.starts || {})[cid]; return st != null ? st : (seqKey(cid) === cid ? (d.startKey || '') : ''); }
 // Each class has its own topic order. Linked classes share new topics, topic names, homework and bring items,
 // but carrying over, moving back and reordering only change the class you're working on.
@@ -1416,12 +1428,12 @@ function isTyping(container) {
 }
 // After a tap (Add, Done, checkbox…) we always redraw, even if a text box still has focus
 // (iPad Safari leaves focus in the text box when a button is tapped), then put focus back.
-function forceRender() { setTimeout(showUndo, 0); rq = false; doRender(true); }
+function forceRender() { setTimeout(showUndo, 0); saveUi(); rq = false; doRender(true); }
 function doRender(force) {
   if (!S.ready) return;
   // a redraw that starts while another is running (e.g. from a blur as the old page is replaced) waits its turn
   if (S._rendering) { setTimeout(() => doRender(force), 0); return; }
-  S._rendering = true; try { doRender2(force); } finally { S._rendering = false; }
+  S._rendering = true; try { doRender2(force); } finally { S._rendering = false; } saveUi();
 }
 function doRender2(force) {
   if (cfg() && !cfg().setupDone && !S.ui.modal) S.ui.modal = { type: 'wizard', step: 0, full: true };
@@ -1504,6 +1516,8 @@ function outfitFor(d) {
 }
 function mascotHTML(d) { const T = resolveTheme(), k = T.mascotKey || T.mascot; if (!(k && T.extras.mascot && MASCOTS[k])) return ''; const of = T.extras.outfits ? outfitFor(d || todayIso()).map(o => OUTFITS[o]).join('') : ''; return `<span class="mascot" data-act="mascot" title="Hello!">${MASCOTS[k]}${of}</span>`; }
 const themeClassPal = th => (th.classPal || (th.tabc && th.tabc.length ? th.tabc : PALETTE_TABS)).slice(0, 8);
+// How many assessments on a day: scheduled ones plus assessments written on that day's lessons/topics
+function asmtCountOn(d) { let n = asmtsOn(d).length; slotsOn(d).forEach(s => { if (!s.c) return; const l = L(s.key), tp = topicFor(s.key); if (l.assessment || (tp && tp.a && !tp.shared)) n++; }); return n; }
 const bdaysOn = d => (cfg().birthdays || []).filter(x => x.md === d.slice(5));
 function easterSunday(y) { const a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451), mo = Math.floor((h + l - 7 * m + 114) / 31), dy = ((h + l - 7 * m + 114) % 31) + 1; return `${y}-${pad(mo)}-${pad(dy)}`; }
 const SEAS_ICON = {
@@ -1655,6 +1669,7 @@ function renderPlanner() {
       ${(d === today || (view === 'day' && !shown.includes(today))) ? mascotHTML(d) : ''}
       ${di.events.map(e => `<span class="ev">${esc(e.label)}</span>`).join(' ')}
       ${bdaysOn(d).map(x => `<span class="ev bday">${I('party')} ${esc(x.who)}</span>`).join(' ')}
+      ${(n => n ? `<span class="ev asday">${I('alert')} ${n} assessment${n === 1 ? '' : 's'}</span>` : '')(asmtCountOn(d))}
       ${dayAs.map(a => `<div style="margin-top:4px">${asmtBanner(a)}${a.row && !a.time ? `<span class="small"> ${esc(asmtRowLabel(a.row))}</span>` : ''}</div>`).join('')}
       ${!di.term ? '<span class="ev" style="background:var(--muted)">No school</span>' : ''}</button>`;
   });
@@ -1673,8 +1688,8 @@ function renderPlanner() {
       g += cell;
     });
   });
-  g += `<div class="rl brk">Homework</div>`;
-  shown.forEach(d => { g += renderHwFoot(d); });
+  // (homework row label removed)
+  // (homework summary row removed)
   g += `</div>`;
   const lb = cfg().lastBackup, bkDue = cfg().setupDone && (!lb || daysBetween(lb, today) >= 14);
   const bk = bkDue ? `<div class="bn" style="margin-bottom:10px">${I('download')}<span class="grow small"><strong>Time for a backup.</strong> ${lb ? `Your last backup was ${fmtD(lb)}.` : 'You haven\u2019t made a backup yet.'} It keeps a safe copy of everything in your planner.</span><button class="btn pri sm" data-act="backup-file">Download Backup</button></div>` : '';
@@ -1768,7 +1783,7 @@ function renderCell(s, row, d, isNow, detail) {
   if (s.special) {
     const sp = SPECIAL[s.special], res = (l.res || []).filter(r => r.text);
     return `<button class="cell special ${isNow ? 'now' : ''}" data-act="open" data-v="${s.key}"><div class="ch">${I(sp.i)}<span class="nm">${esc(spLabel(s))}</span>${hasInk(s.key) ? I('pen') : ''}${s.r && cfg().showRooms !== false ? `<span class="room">${esc(s.r)}</span>` : ''}</div>
-      <div class="cb">${l.notes ? `<div class="ln"><span class="ic">${I('note')}</span><span>${esc(l.notes.slice(0, 80))}</span></div>` : ''}${res.map(r => `<div class="ln res ${r.done ? 'done' : ''}"><span class="ic">${I(RTYPES[r.type || 'print'].i)}</span><span>${esc(r.text)}</span></div>`).join('')}</div></button>`;
+      <div class="cb">${l.notes ? `<div class="ln"><span class="ic">${I('note')}</span><span>${esc(l.notes.slice(0, 80))}</span></div>` : ''}${res.map(r => `<div class="ln res r-${r.type || 'print'} ${r.done ? 'done' : ''}"><span class="ic">${I(RTYPES[r.type || 'print'].i)}</span><span>${esc(r.text)}</span></div>`).join('')}</div></button>`;
   }
   if (!s.c) {
     const has = l.notes || (l.res || []).length || hasInk(s.key);
@@ -1777,24 +1792,45 @@ function renderCell(s, row, d, isNow, detail) {
   }
   const c = cls(s.c), tint = cellTint(c.color), tx = contrastText(c.color);
   const tp = topicFor(s.key);
+  if (detail && !l.cancelled) return dayLessonHTML(s, c, tp, l, isNow);
   const lim = detail ? 99 : 3;
   const res = resFor(s.key);
   const checks = checkItems(s.key);
   const sets = hwSetFor(s.key);
   const lines = [];
-  res.slice(0, lim).forEach(r => lines.push(`<div class="ln res ${r.done ? 'done' : ''}"><span class="ic">${I(RTYPES[r.type || 'print'].i)}</span><span>${esc(r.text)}</span></div>`));
+  res.slice(0, lim).forEach(r => lines.push(`<div class="ln res r-${r.type || 'print'} ${r.done ? 'done' : ''}"><span class="ic">${I(RTYPES[r.type || 'print'].i)}</span><span>${esc(r.text)}</span></div>`));
   if (res.length > lim) lines.push(`<div class="ln res"><span class="ic"></span>+${res.length - lim} more</div>`);
   checks.slice(0, lim).forEach(r => lines.push(`<div class="ln chk ${r.done ? 'done' : ''}"><span class="ic">${I('check')}</span><span>${esc(r.text)}</span></div>`));
   sets.slice(0, lim).forEach(r => lines.push(`<div class="ln set"><span class="ic">${I('pencil')}</span><span>${esc(r.text)}${(dk => dk ? ` <span class="small">(due ${fmtD(dk.slice(0, 10))})</span>` : '')(resolveDue(s.c, s.key, r.due))}</span></div>`));
   if (detail && l.notes) lines.push(`<div class="ln"><span class="ic">${I('note')}</span><span>${esc(l.notes)}</span></div>`);
   (l.outs || []).forEach(o => { const n = o.codes.filter(c => !c.done).length; if (n) lines.push(`<div class="ln chk"><span class="ic">${I('alert')}</span><span>${esc(o.title || 'Homework')}: ${n} outstanding</span></div>`); });
   const dk = /^#?f/i.test(tx) || tx === '#fff' || tx === 'white';
-  return `<button class="cell solid ${dk ? 'dkcell' : ''} ${l.cancelled ? 'cancel' : ''} ${isNow ? 'now' : ''}" data-act="open" data-v="${s.key}" style="background-color:${tint};border-color:${mix(c.color, '#000000', .8)};color:${tx}">
-    <div class="ch" style="background:${c.color};color:${tx};border-bottom:1px solid rgba(0,0,0,.1)"><span class="nm">${esc(c.name)}</span>${doubleInfo(s.key) ? '<span class="dblbadge">Double</span>' : ''}${(l.icons || []).map(x => I(iconName(x))).join('')}${hasInk(s.key) ? I('pen') : ''}${s.r && cfg().showRooms !== false ? `<span class="room">${esc(s.r)}</span>` : ''}</div>
+  const isAs = !!(l.assessment || (tp && tp.a));
+  return `<button class="cell solid ${isAs ? 'hasas' : ''} ${dk ? 'dkcell' : ''} ${l.cancelled ? 'cancel' : ''} ${isNow ? 'now' : ''}" data-act="open" data-v="${s.key}" style="background-color:${tint};border-color:${mix(c.color, '#000000', .8)};color:${tx}">
+    <div class="ch" style="background:${c.color};color:${tx};border-bottom:1px solid rgba(0,0,0,.1)"><span class="nm">${esc(c.name)}</span>${(l.icons || []).map(x => I(iconName(x))).join('')}${hasInk(s.key) ? I('pen') : ''}${s.r && cfg().showRooms !== false ? `<span class="room">${esc(s.r)}</span>` : ''}</div>
     <div class="cb">${l.cancelled ? `<div class="tp">${I((OFFTYPES[l.cancelType || 'cancel'] || OFFTYPES.cancel).i)} ${esc(offLabel(l))}</div>` : `<div class="tp ${tp ? '' : 'none'}">${tp ? esc(tp.text) : 'No topic yet'}</div>`}
-    ${l.assessment || (tp && tp.a) ? `<div class="ln"><span class="badge">${I('test')} ${esc(l.assessment || tp.a)}</span></div>` : ''}
+    ${l.assessment || (tp && tp.a) ? `<div class="asbanwrap" style="margin:4px 0"><span class="asban">${I('alert')} <span class="grow">ASSESSMENT: ${esc(l.assessment || tp.a)}</span></span></div>` : ''}
     ${l.unfinished ? `<div class="ln small" style="color:var(--accent)">${I('refresh')} carried over</div>` : ''}
     ${lines.join('')}</div></button>`;
+}
+// Daily view: a lesson with everything written in it, in sections you can open and close (remembered)
+function dayLessonHTML(s, c, tp, l, isNow) {
+  const tx = contrastText(c.color), dk = /^#?f/i.test(tx), res = resFor(s.key), checks = checkItems(s.key), sets = hwSetFor(s.key), asm = l.assessment || (tp && tp.a), sch = asmtsOn(s.d, s.row.id).filter(a => !a.cid || a.cid === s.c);
+  const open = (sec, def) => { const v = (S.ui.dayOpen || {})[s.key + '|' + sec]; return v == null ? def : v; };
+  const sec = (id, title, body, def = true, col = '') => body ? `<details class="dsec" data-dsec="${s.key}|${id}" ${open(id, def) ? 'open' : ''}><summary style="${col}">${title}</summary><div class="dsb">${body}</div></details>` : '';
+  const li = (cls2, ic, txt, done) => `<div class="ln ${cls2} ${done ? 'done' : ''}"><span class="ic">${I(ic)}</span><span>${txt}</span></div>`;
+  const outs = (l.outs || []).filter(o => o.codes.some(x => !x.done));
+  return `<div class="cell solid daycell ${asm || sch.length ? 'hasas' : ''} ${dk ? 'dkcell' : ''} ${isNow ? 'now' : ''}" style="background-color:${c.color};color:${tx}">
+    <button class="ch" data-act="open" data-v="${s.key}" style="background:${c.color};color:${tx};border:0;border-bottom:1px solid rgba(0,0,0,.12);width:100%;text-align:left;font:inherit;cursor:pointer"><span class="nm">${esc(c.name)}</span>${s.r && cfg().showRooms !== false ? `<span class="room">${esc(s.r)}</span>` : ''}<span class="grow"></span><span class="small" style="font-weight:700">${I('edit')} Open</span></button>
+    <div class="cb"><div class="tp ${tp ? '' : 'none'}">${tp ? esc(tp.text) : 'No topic yet'}</div>
+    ${asm ? `<div class="asbanwrap" style="margin:4px 0"><span class="asban">${I('alert')} <span class="grow">ASSESSMENT: ${esc(asm)}</span></span></div>` : ''}
+    ${l.unfinished ? `<div class="ln small">${I('refresh')} carried over</div>` : ''}
+    ${sec('res', `${I('bag')} Print · Bring · Upload · To Do (${res.length})`, res.map(r => `<div class="ln res r-${r.type || 'print'} ${r.done ? 'done' : ''}"><span class="ic">${I(RTYPES[r.type || 'print'].i)}</span><span>${esc(r.text)}</span></div>`).join(''))}
+    ${sec('chk', `${I('check')} Homework to Check (${checks.length})`, checks.map(r => li('chk', 'check', esc(r.text), r.done)).join('') + outs.map(o => li('chk', 'alert', `${esc(o.title || 'Homework')}: not done – ${esc(o.codes.filter(x => !x.done).map(x => x.c).join(', '))}`)).join(''))}
+    ${sec('set', `${I('pencil')} Homework Set (${sets.length})`, sets.map(r => li('set', 'pencil', `${esc(r.text)}${(dkk => dkk ? ` <span class="small">(due ${fmtD(dkk.slice(0, 10))})</span>` : r.due === 'later' ? ' <span class="small">(due date to set)</span>' : '')(resolveDue(s.c, s.key, r.due))}`)).join(''))}
+    ${sec('notes', `${I('note')} Notes`, l.notes ? `<div style="white-space:pre-wrap">${esc(l.notes)}</div>` : '')}
+    ${sec('refl', `${I('star')} How Did It Go?`, l.reflection ? `<div style="white-space:pre-wrap">${esc(l.reflection)}</div>` : '', false)}
+    </div></div>`;
 }
 // Homework to check in a lesson = manual items + homework set earlier that is due this lesson
 const OFFTYPES = { cancel: { l: 'Cancelled', i: 'x' }, excursion: { l: 'Incursion / Excursion', i: 'bus' }, incursion: { l: 'Incursion / Excursion', i: 'bus' } };
@@ -2016,7 +2052,7 @@ function printLine(it, showDate, compact) {
   else where = `<span class="small muted">${showDate ? 'Week of ' + fmtDM(it.wk) : 'This week'}</span>`;
   const act = it.kind !== 'ext' ? `data-act="res-toggle" data-key="${it.key}" data-id="${r.id}"` : `data-act="extra-toggle" data-v="${it.wk}" data-id="${r.id}"`;
   const del = it.kind === 'ext' ? `<button class="x" data-act="extra-del" data-v="${it.wk}" data-id="${r.id}" aria-label="Delete">${I('x')}</button>` : '';
-  const pp = !r.done && !String(r.id).startsWith('tb_') ? `<button class="btn sm" data-act="postpone" data-kind="${it.kind}" data-key="${it.key || ''}" data-v="${it.wk || ''}" data-id="${r.id}" title="Move to next week">${I('right')} Postpone</button>` : '';
+  const pp = !r.done && !String(r.id).startsWith('tb_') ? `<button class="btn sm" data-act="postpone" data-dir="-1" data-kind="${it.kind}" data-key="${it.key || ''}" data-v="${it.wk || ''}" data-id="${r.id}" title="Move back a week">${I('left')} Back a Week</button><button class="btn sm" data-act="postpone" data-kind="${it.kind}" data-key="${it.key || ''}" data-v="${it.wk || ''}" data-id="${r.id}" title="Move to next week">${I('right')} Postpone</button>` : '';
   const dated = it.kind === 'les' || it.kind === 'day';
   const open = compact && (S.ui.ckOpen || {})[r.id + (it.key || '')], det = compact && dated ? `<div class="small muted" style="padding:0 6px 8px 37px">${I('calendar')} ${fmtLong(it.d)}${it.kind === 'les' ? ` · ${esc(it.s.row.label)} <button class="btn sm" data-act="open" data-v="${it.key}" style="margin-left:6px">Open lesson</button>` : ' · day to do'}</div>` : '';
   return `<div class="list-item ${r.done ? 'done' : ''}" style="${open ? 'border-bottom:0' : ''}"><input type="checkbox" ${r.done ? 'checked' : ''} ${act}><span class="typeTag t-${t}">${I(RTYPES[t].i)} ${RTYPES[t].l}</span><span class="tx grow" ${compact && dated ? `data-act="ck-open" data-v="${r.id + (it.key || '')}" style="cursor:pointer"` : ''}>${esc(r.text)}${compact && dated ? ` <span class="small muted">${I(open ? 'up' : 'down')}</span>` : ''}</span>${where}${pp}${del}</div>${open ? det : ''}`;
@@ -2064,7 +2100,8 @@ function checklistList(m, compact) {
   ${dl.length ? `<div class="card" style="border-left:6px solid var(--c-set)"><h3>${I('pencil')} Homework Due Dates to Set</h3>${dl.map(r => `<div class="list-item"><span class="typeTag t-todo">${I('calendar')} Due date</span><span class="tx grow">Choose a due date for “${esc(r.it.text)}”</span><span class="row nowrap small">${cls(r.cid) ? `<span class="dot" style="background:${cls(r.cid).color}"></span>${esc(cls(r.cid).name)} · ` : ''}set ${fmtD(keyDate(r.src))}</span><button class="btn sm" data-act="open" data-v="${r.src}">Set Date</button></div>`).join('')}</div>` : ''}
   ${ot ? `<div class="card"><div class="list-item ${ot.done ? 'done' : ''}" style="align-items:flex-start"><input type="checkbox" ${ot.done ? 'checked' : ''} data-act="outemail-done" data-v="${m}"><span class="typeTag t-todo">${I('mail')} Email</span><span class="tx grow">Email students about outstanding homework (${ot.n} student${ot.n === 1 ? '' : 's'})<br><span class="small muted">${ot.rows.map(x => `${esc((cls(x.cid) || {}).name || '')} – ${esc(x.o.title)}: ${esc(x.left.join(', '))}`).join('<br>')}</span></span><button class="btn sm" data-act="goto-out">Open</button></div></div>` : ''}
   ${carried.length ? `<div class="card" style="border-left:6px solid var(--accent)"><h3>${I('refresh')} Carried Over – Not Ticked Off Yet</h3>${carried.map(it => printLine(it, true)).join('')}</div>` : ''}
-  ${(() => { const wk = [...(groups._week || []), ...days.flatMap(d => groups[d] || [])].sort((a, b) => (!!a.r.done - !!b.r.done) || ((a.d || '0') < (b.d || '0') ? -1 : (a.d || '0') > (b.d || '0') ? 1 : 0)); return wk.length ? `<div class="card"><h3>This Week</h3>${wk.map(it => printLine(it, false, true)).join('')}<p class="hint" style="margin:6px 0 0">Tap an item to see its date and lesson.</p></div>` : ''; })()}
+  ${(() => { const wk = [...(groups._week || []), ...days.flatMap(d => groups[d] || [])].sort((a, b) => (!!a.r.done - !!b.r.done) || ((a.d || '0') < (b.d || '0') ? -1 : (a.d || '0') > (b.d || '0') ? 1 : 0)); return `<div class="card"><h3>This Week</h3>${wk.map(it => printLine(it, false, true)).join('') || '<p class="muted small">Nothing on your list yet.</p>'}${wk.some(it => it.kind === 'les' || it.kind === 'day') ? '<p class="hint" style="margin:6px 0 0">Tap an item to see its date and lesson.</p>' : ''}
+    ${compact ? '' : `<form class="row quickadd" data-form="quick-add" style="margin-top:10px;border-top:1px solid var(--line);padding-top:10px"><select id="qa-type">${Object.entries(RTYPES).map(([k, v]) => `<option value="${k}" ${(S.ui.qaType || 'todo') === k ? 'selected' : ''}>${v.l}</option>`).join('')}</select><input type="text" id="qa-text" class="grow" placeholder="Quick add an item to this week…" autocomplete="off" enterkeyhint="done"><button type="button" class="btn pri" data-act="quick-add" data-v="${m}" data-keepfocus>${I('plus')} Add</button></form>`}</div>`; })()}
   ${!total ? `<div class="card muted">Nothing on your To Do List for this week yet.</div>` : ''}
   ${comingUp(m, f)}`;
 }
@@ -2415,7 +2452,7 @@ function renderTopics() {
       <div class="row"><span class="small muted">About</span><select data-chg="perfn" data-id="${cid}"><option value="0" ${!c.perFn ? 'selected' : ''}>Not set</option>${Array.from({ length: 16 }, (_, i) => i + 1).map(n => `<option value="${n}" ${+c.perFn === n ? 'selected' : ''}>${n}</option>`).join('')}</select><span class="small muted">lessons a fortnight</span></div>
       ${c.perFn ? (() => { const counts = terms.filter(t => !t.ownTT).map(t => { const real = classSlotsInTerm(cid, t).length; return `${esc(t.name.replace(/\s*\d{4}$/, ''))}: ${real ? real + ' lessons (timetable)' : draftSlots(c, t).length + ' draft lessons'}`; }); return `<p class="small muted" style="margin-top:6px">${counts.join(' · ')}</p>`; })() : ''}</details>
   </div>
-  <div><div class="card"><div class="row"><span class="seg"><button class="${tv === 'list' ? 'on' : ''}" data-act="topic-view" data-v="list">${I('list')} Topic Overview</button><button class="${tv === 'lessons' ? 'on' : ''}" data-act="topic-view" data-v="lessons">${I('calendar')} Lesson by Lesson</button></span><span class="grow"></span><span class="small muted">${topicsAll.filter(t => t.t).length} topics</span></div>
+  <div><div class="card"><div class="row"><span class="seg"><button class="${tv === 'list' ? 'on' : ''}" data-act="topic-view" data-v="list">${I('list')} Topic Overview</button><button class="${tv === 'lessons' ? 'on' : ''}" data-act="topic-view" data-v="lessons">${I('calendar')} Lesson by Lesson</button></span><span class="grow"></span><span class="small muted">${topicsAll.filter(t => t.t).length} topics</span>${(cfg().classes || []).length > 1 && topicsAll.length ? `<button class="btn sm" data-act="copy-open" data-v="0">${I('copy')} Copy to Another Class</button>` : ''}</div>
     ${!lessons.length ? `<div class="bn" style="margin:10px 0"><span class="grow small">Your ${esc(c.name)} topics will get dates once ${esc(c.name)} is in your timetable${terms.length ? '' : ' and your term dates are set'}.</span><button class="btn sm" data-act="goset" data-v="${terms.length ? 'timetable' : 'terms'}">${terms.length ? 'Set Up Timetable' : 'Set Term Dates'}</button></div>` : ''}
     ${lw.length ? `<div class="row" style="margin:8px 0"><span class="hint grow">Reordering and carrying over here only changes ${esc(c.name)}.</span><button class="btn sm danger" data-act="match-linked">${I('alert')} Copy This Plan to ${esc(lw.map(x => x.name).join(', '))}</button></div>` : ''}
     ${tv === 'list' ? topicOverview(cid, topicsAll, a, terms) : lessonByLesson(cid, c, a, terms)}
@@ -2438,7 +2475,7 @@ function topicOverview(cid, topicsAll, a, terms) {
   const order = [...terms.map(t => t.id), '__none'].filter(g => groups[g]);
   if (!topicsAll.length) return `<p class="muted">No topics yet. Type one on the left and press Enter.</p>`;
   return `<p class="hint">Drag the dotted handle to change the order – the lesson dates update to match. Type in a topic to change it, or tap + to add one after it. Open two terms to move a topic between them.</p>
-  <div id="seqlist">${order.map(g => { const label = g === '__none' ? 'Not scheduled yet' : terms.find(t => t.id === g).name; return `<div class="termgrp">${termHead(g, label, groups[g].filter(x => x.t.t).length + ' topics')}${termIsOpen(g) ? groups[g].map(({ t, i, k }) => `<div class="seq-row${wkShade(k)}" data-id="${t.id}"><span class="handle" data-drag="${t.id}">${I('grip')}</span><span class="num">${i + 1}</span><input type="text" class="grow" data-in="topic" data-raw="1" data-id="${t.id}" placeholder="Type a topic…" value="${esc(t.t)}">${t.a ? `<span class="badge">${I('test')} ${esc(t.a)} <button class="x" data-act="topic-a-del" data-id="${t.id}" title="Remove assessment" style="padding:0 2px">${I('x')}</button></span>` : ''}${bringsOf(t).length ? `<span class="small" style="color:var(--c-res);white-space:nowrap" title="Bring">${I('bag')} ${esc(bringsOf(t).join(', '))}</span>` : ''}<span class="when">${k ? esc(lessonLabel(k)) : 'No lesson yet'}</span><button class="x" data-act="topic-ins" data-id="${t.id}" title="Add a topic after this one">${I('plus')}</button><button class="x" data-act="topic-del" data-id="${t.id}" title="Delete topic">${I('x')}</button></div>`).join('') : ''}</div>`; }).join('')}</div>`;
+  <div id="seqlist">${order.map(g => { const label = g === '__none' ? 'Not scheduled yet' : terms.find(t => t.id === g).name; return `<div class="termgrp">${termHead(g, label, groups[g].filter(x => x.t.t).length + ' topics')}${termIsOpen(g) ? groups[g].map(({ t, i, k }) => `<div class="seq-row${wkShade(k)}" data-id="${t.id}"><span class="handle" data-drag="${t.id}">${I('grip')}</span><span class="num">${i + 1}</span><input type="text" class="grow" data-in="topic" data-raw="1" data-id="${t.id}" placeholder="Type a topic…" value="${esc(t.t)}">${t.a ? `<span class="badge">${I('test')} ${esc(t.a)} <button class="x" data-act="topic-a-del" data-id="${t.id}" title="Remove assessment" style="padding:0 2px">${I('x')}</button></span>` : ''}${false ? '' : ''}<span class="when">${k ? esc(lessonLabel(k)) : 'No lesson yet'}</span><button class="x" data-act="topic-ins" data-id="${t.id}" title="Add a topic after this one">${I('plus')}</button><button class="x" data-act="topic-del" data-id="${t.id}" title="Delete topic">${I('x')}</button></div>`).join('') : ''}</div>`; }).join('')}</div>`;
 }
 function lessonByLesson(cid, c, a, terms) {
   if (!terms.length) return '<p class="muted">Add your term dates first.</p>';
@@ -2448,8 +2485,8 @@ function lessonByLesson(cid, c, a, terms) {
     if (l.cancelled) return `<div class="seq-row${wkShade(sl.key)}" style="opacity:.6"><span class="handle"></span>${when}<span class="grow"><em>${esc(offLabel(l))}</em></span><button class="btn sm" data-act="cancel-lesson" data-v="${sl.key}">Restore</button></div>`;
     if (l.ownTopic) return `<div class="seq-row${wkShade(sl.key)}"><span class="handle">${I('star')}</span>${when}<span class="grow">${esc(l.ownTopic)}</span></div>`;
     if (m && m.shared) return `<div class="seq-row${wkShade(sl.key)}" style="opacity:.75"><span class="handle"></span>${when}<span class="grow small muted">Double lesson – same topic as ${esc(rowOf(keyRow(m.shared)).label)}</span></div>`;
-    if (m) { const t = m.t; return `<div class="seq-row${wkShade(sl.key)}" data-id="${t.id}"><span class="handle" data-drag="${t.id}">${I('grip')}</span>${when}<span class="num">${m.i + 1}</span><span class="grow" style="font-weight:700;color:var(--c-topic)">${esc(t.t || '—')}</span>${(l.assessment || t.a) ? `<span class="badge">${I('test')} ${esc(l.assessment || t.a)} <button class="x" data-act="${l.assessment ? 'lesson-a-del' : 'topic-a-del'}" data-id="${t.id}" data-key="${sl.key}" title="Remove assessment" style="padding:0 2px">${I('x')}</button></span>` : ''}${asmtsOn(keyDate(sl.key), keyRow(sl.key)).filter(x => !x.cid || x.cid === cid).map(x => asmtBanner(x, true, true)).join('')}<button class="x" data-act="lbl-add" data-id="${t.id}" title="Add homework or something to bring">${I('plus')}</button></div>
-      ${bringsOf(t).length || (t.hw || []).length ? `<div class="row" style="margin:-2px 0 6px 40px;gap:6px">${bringsOf(t).map((b, bi) => `<span class="chip small" style="color:var(--c-res)">${I('bag')} ${esc(b)} <button class="x" data-act="tb-del" data-id="${t.id}" data-v="${bi}" title="Remove bring item">${I('x')}</button></span>`).join('')}${(t.hw || []).map(hh => `<span class="chip small" style="color:var(--c-set)">${I('pencil')} ${esc(hh.text)}${hh.due ? ` <span class="hint">(${hh.due === 'later' ? 'due date to set' : hh.due === 'next' ? 'due next lesson' : 'due ' + fmtD(hh.due.slice(0, 10))})</span>` : ''} <button class="x" data-act="thw-del" data-tid="${t.id}" data-id="${hh.id}" title="Remove homework">${I('x')}</button></span>`).join('')}</div>` : ''}
+    if (m) { const t = m.t; return `<div class="seq-row${wkShade(sl.key)}" data-id="${t.id}"><span class="handle" data-drag="${t.id}">${I('grip')}</span>${when}<span class="num">${m.i + 1}</span><span class="grow" style="font-weight:700;color:var(--c-topic)">${esc(t.t || '—')}</span>${(l.assessment || t.a) ? `<span class="badge">${I('test')} ${esc(l.assessment || t.a)} <button class="x" data-act="${l.assessment ? 'lesson-a-del' : 'topic-a-del'}" data-id="${t.id}" data-key="${sl.key}" title="Remove assessment" style="padding:0 2px">${I('x')}</button></span>` : ''}${asmtsOn(keyDate(sl.key), keyRow(sl.key)).filter(x => !x.cid || x.cid === cid).map(x => asmtBanner(x, true, true)).join('')}<button class="x" data-act="lbl-add" data-id="${t.id}" title="Add homework or something to bring">${I('plus')}</button>${(cfg().classes || []).length > 1 ? `<button class="x" data-act="copy-one" data-id="${t.id}" title="Copy this lesson to another class">${I('copy')}</button>` : ''}</div>
+      ${false ? `<div class="row" style="margin:-2px 0 6px 40px;gap:6px">${bringsOf(t).map((b, bi) => `<span class="chip small" style="color:var(--c-res)">${I('bag')} ${esc(b)} <button class="x" data-act="tb-del" data-id="${t.id}" data-v="${bi}" title="Remove bring item">${I('x')}</button></span>`).join('')}${(t.hw || []).map(hh => `<span class="chip small" style="color:var(--c-set)">${I('pencil')} ${esc(hh.text)}${hh.due ? ` <span class="hint">(${hh.due === 'later' ? 'due date to set' : hh.due === 'next' ? 'due next lesson' : 'due ' + fmtD(hh.due.slice(0, 10))})</span>` : ''} <button class="x" data-act="thw-del" data-tid="${t.id}" data-id="${hh.id}" title="Remove homework">${I('x')}</button></span>`).join('')}</div>` : ''}
       ${S.ui.lblAdd === t.id ? `<form class="clsrow" data-form="lbl-save" style="margin:0 0 8px 40px"><span class="seg"><button type="button" class="${(S.ui.lblKind || 'hw') === 'hw' ? 'on' : ''}" data-act="lbl-kind" data-v="hw">${I('pencil')} Homework Set</button><button type="button" class="${S.ui.lblKind === 'bring' ? 'on' : ''}" data-act="lbl-kind" data-v="bring">${I('bag')} Something to Bring</button></span>
         <textarea id="lbl-text" rows="2" style="width:100%;margin-top:6px;min-height:52px" placeholder="${S.ui.lblKind === 'bring' ? 'One item per line, e.g.\nLaptops\nCalculators' : 'One homework task per line, e.g.\nWorksheet 2\nRead pages 10–12'}"></textarea>
         ${(S.ui.lblKind || 'hw') === 'hw' ? dueChooser('lbl', S.ui.lblDue || '', S.ui.lblDueDate || '') : ''}
@@ -2484,7 +2521,6 @@ function secHTML(k) {
       <div class="card"><h2>Fun Extras</h2><p class="hint">Turn the little extras on or off. Your choices stay the same when you change theme.</p>
         ${Object.entries(EXTRAS).map(([k2, l]) => `<label class="chk" style="display:flex;margin:6px 0"><input type="checkbox" data-act="look-extra" data-v="${k2}" ${T.extras[k2] ? 'checked' : ''}> ${l}</label>`).join('')}
         <div class="row" style="margin-top:6px"><span class="small" style="font-weight:800">Confetti style</span><select data-chg="confstyle">${Object.entries(CONFETTI).map(([k2, l]) => `<option value="${k2}" ${(cfg().theme.confetti || 'theme') === k2 ? 'selected' : ''}>${l}</option>`).join('')}</select><button class="btn sm" data-act="conf-try">Try it</button></div></div>
-      <div class="card"><h2>Class Colours</h2><p class="hint">Each theme has its own colour palette for your classes. Choose “Theme colours” in Classes & Colours and your classes will change colour whenever you change theme.</p><div class="row"><span class="row nowrap" style="gap:4px">${themeClassPal(th).map(c => `<span class="dot" style="width:18px;height:18px;background:${c}"></span>`).join('')}</span>${C.palName === 'Theme' ? '<span class="small muted">Your classes are using these colours.</span>' : `<button class="btn sm" data-act="palette" data-v="Theme">Use These for My Classes</button>`}</div></div>
       <div class="card"><h2>Light & Dark</h2>
         <div class="chips">${chip('look-mode', 'auto', t.mode || 'auto', 'Automatic (matches my device)')}${chip('look-mode', 'light', t.mode, 'Always Light')}${chip('look-mode', 'dark', t.mode, 'Always Dark')}</div>
         <h3 style="margin-top:12px">Dark Mode Surface</h3>
@@ -2521,8 +2557,7 @@ function secHTML(k) {
       return `<div class="card"><h2>Your Classes</h2><p class="hint">Each class keeps its colour everywhere in the planner. Use class names like “9B Science” (no student names).</p>
       <form class="row" data-form="add-cls"><input type="text" class="grow" id="add-cls" placeholder="Type a class name, e.g. 9B Science" enterkeyhint="done" autocomplete="off"><button type="button" class="btn pri" data-act="add-cls" data-keepfocus>${I('plus')} Add Class</button></form>
       <div id="clsList">${clsListHTML()}</div></div>
-      ${(C.classes || []).length > 1 ? `<div class="card"><h2>Classes That Share Topics</h2><p class="hint">Teach two classes of the same subject? Link them and they share one topic list and the homework you set. Each class still moves through the topics in its own lessons.</p>
-        ${C.classes.map(c => `<div class="row" style="margin:6px 0"><span class="dot" style="background:${c.color};width:14px;height:14px"></span><strong style="min-width:140px">${esc(c.name)}</strong><span class="small muted">shares topics with</span><select data-chg="clslink" data-id="${c.id}"><option value="">No other class</option>${C.classes.filter(x => x.id !== c.id).map(x => `<option value="${x.id}" ${c.linkTo === x.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>`).join('')}</div>` : ''}
+
       <div class="card"><h2>Colour Palettes</h2><p class="hint">Tap a palette to recolour all your classes at once. Its colours also appear as quick choices above.</p>${[['Theme', palette('Theme')], ...Object.entries(PALETTES)].map(([n, p]) => `<button class="row nowrap" style="border:1px solid var(--line);background:var(--paper2);border-radius:10px;padding:8px;margin:5px 0;width:100%;${(C.palName || 'Theme') === n ? 'box-shadow:0 0 0 2px var(--accent)' : ''}" data-act="palette" data-v="${n}"><strong style="min-width:170px;text-align:left">${n === 'Theme' ? `Theme colours (${esc((THEMES[C.theme.name] || THEMES.classic).name)})` : n}</strong>${p.map(x => `<span class="swatch" style="background:${x};display:inline-block"></span>`).join('')}</button>`).join('')}
         <div style="border:1px solid var(--line);background:var(--paper2);border-radius:10px;padding:8px;margin:5px 0;${C.palName === 'Custom' ? 'box-shadow:0 0 0 2px var(--accent)' : ''}"><div class="row"><strong style="min-width:170px">My Custom Palette</strong>${palette('Custom').map((x, i) => `<input type="color" value="${x}" data-chg="custompal" data-v="${i}" title="Colour ${i + 1}">`).join('')}</div>
         <div class="row" style="margin-top:6px"><button class="btn sm pri" data-act="palette" data-v="Custom">Use My Custom Palette</button><span class="hint">Tap each square to pick your own colours.</span></div></div></div>`;
@@ -2686,6 +2721,24 @@ function renderModal() {
     ${f.mode !== 'time' && mine.length ? `<div class="row" style="margin-top:6px"><span class="small muted">${esc(cls(f.cid).name)} that day:</span>${mine.map(x => `<button class="chip ${f.row === x.row.id ? 'on' : ''}" data-act="asmt-row" data-v="${x.row.id}">${esc(x.row.label)}</button>`).join('')}</div>` : f.cid && f.date ? `<div class="hint">No ${esc(cls(f.cid).name)} lesson that day – pick any time, e.g. After School or another period.</div>` : ''}
     <label class="small" style="font-weight:800;margin-top:10px;display:block">Notes (optional – just for you, not in the student email)</label><input type="text" id="asmt-notes" style="width:100%" data-chg="asmtf" data-f="notes" placeholder="e.g. Room 12, bring calculators" value="${esc(f.notes || '')}" autocomplete="off">
     <div class="row" style="margin-top:14px">${f.id ? `<button class="btn danger" data-act="asmt-del" data-id="${f.id}">${I('x')} Delete</button>` : ''}<span class="grow"></span><button class="btn" data-act="close-modal">Cancel</button><button class="btn asbtn" data-act="asmt-save">${I('check')} Save Assessment</button></div>`;
+  }
+  if (md.type === 'copyto') {
+    const src = S.ui.topicCls, tps = (seqDoc(src).topics || []), others = (cfg().classes || []).filter(c => c.id !== src), f = S.ui.cp = S.ui.cp || {};
+    if (!others.find(c => c.id === f.to)) f.to = (others[0] || {}).id;
+    const opt = (sel, i, t) => `<option value="${i}" ${sel === i ? 'selected' : ''}>${i + 1}. ${esc(t.t || '(blank)')}</option>`;
+    const tl = f.to ? (assign().all[f.to] || []).filter(k => keyDate(k) >= todayIso()).slice(0, 120) : [];
+    return `<h2 class="hf" style="font-size:1.8em">Copy to Another Class</h2><p class="hint">Copies topics from ${esc(cls(src).name)}. ${esc(cls(src).name)} isn't changed, and the copy can be edited separately.</p>
+    <div class="row"><span class="small" style="font-weight:800;min-width:60px">From</span><select class="grow" data-chg="cpf" data-f="from">${tps.map((t, i) => opt(+f.from, i, t)).join('')}</select></div>
+    <div class="row" style="margin-top:6px"><span class="small" style="font-weight:800;min-width:60px">To</span><select class="grow" data-chg="cpf" data-f="upto">${tps.map((t, i) => i >= +f.from ? opt(+f.upto, i, t) : '').join('')}</select></div>
+    <div class="row" style="margin-top:6px"><button class="btn sm" data-act="cp-all">Whole sequence</button><button class="btn sm" data-act="cp-one">Just one lesson</button><span class="hint">${+f.upto - +f.from + 1} topic${+f.upto - +f.from ? 's' : ''}</span></div>
+    <div class="row" style="margin-top:12px"><span class="small" style="font-weight:800;min-width:60px">Copy to</span><select class="grow" data-chg="cpf" data-f="to">${others.map(c => `<option value="${c.id}" ${f.to === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>
+    <div class="row" style="margin-top:6px"><span class="small" style="font-weight:800;min-width:60px">Put them</span><select class="grow" data-chg="cpf" data-f="where"><option value="end" ${f.where !== 'at' && f.where !== 'replace' ? 'selected' : ''}>After its last topic</option><option value="at" ${f.where === 'at' ? 'selected' : ''}>Starting at a lesson…</option><option value="replace" ${f.where === 'replace' ? 'selected' : ''}>Replace all of its topics</option></select></div>
+    ${f.where === 'at' ? `<div class="row" style="margin-top:6px"><span style="min-width:60px"></span><select class="grow" data-chg="cpf" data-f="at">${tl.map(k => `<option value="${k}" ${f.at === k ? 'selected' : ''}>${esc(lessonLabel(k))}</option>`).join('') || '<option value="">No lessons found</option>'}</select></div>` : ''}
+    <label class="chk" style="display:flex;margin-top:10px"><input type="checkbox" data-act="cp-tog" data-v="hw" ${f.hw !== false ? 'checked' : ''}> Include set homework</label>
+    <label class="chk" style="display:flex;margin-top:4px"><input type="checkbox" data-act="cp-tog" data-v="bring" ${f.bring !== false ? 'checked' : ''}> Include what to bring</label>
+    <label class="chk" style="display:flex;margin-top:4px"><input type="checkbox" data-act="cp-tog" data-v="as" ${f.as !== false ? 'checked' : ''}> Include assessments written on topics</label>
+    ${f.where === 'replace' ? `<div class="bn" style="margin-top:8px">${I('alert')}<span class="small">This removes all of ${esc((cls(f.to) || {}).name || '')}'s current topics. You can undo it.</span></div>` : ''}
+    <div class="row" style="margin-top:14px"><span class="grow"></span><button class="btn" data-act="close-modal">Cancel</button><button class="btn pri" data-act="cp-go">${I('copy')} Copy</button></div>`;
   }
   if (md.type === 'hwconf') {
     const live = hwConflicts(), list = md.list.filter(x => live.some(y => y.hid === x.hid));
@@ -2948,13 +3001,13 @@ function handleAct(a, v, id, el, key) {
     }
     case 'thw-del': forGroup(key && S.ui.sheet ? classOfKey(key) : S.ui.topicCls, sd => { const t = sd.topics.find(x => x.id === el.dataset.tid); if (t) t.hw = (t.hw || []).filter(x => x.id !== id); }); break;
     case 'postpone': {
-      const kind = el.dataset.kind, nextWk = addDays(targetWeek(), 7);
-      if (kind === 'ext') { let item; upd('W_' + v, w => { item = (w.extras || []).find(x => x.id === id); w.extras = (w.extras || []).filter(x => x.id !== id); }); if (item) upd('W_' + nextWk, w => { w.extras = [...(w.extras || []), { ...item, done: false }]; }); toast('Moved to next week'); break; }
+      const kind = el.dataset.kind, step = el.dataset.dir === '-1' ? -7 : 7, nextWk = addDays(targetWeek(), step);
+      if (kind === 'ext') { let item; upd('W_' + v, w => { item = (w.extras || []).find(x => x.id === id); w.extras = (w.extras || []).filter(x => x.id !== id); }); if (item) upd('W_' + nextWk, w => { w.extras = [...(w.extras || []), { ...item, done: false }]; }); toast(step < 0 ? 'Moved back a week' : 'Moved to next week'); break; }
       const from = el.dataset.key; let item; updL(from, l => { item = (l.res || []).find(x => x.id === id); l.res = (l.res || []).filter(x => x.id !== id); });
       if (!item) break;
       let to = '';
-      if (kind === 'les') { const cid = classOfKey(from); to = (realAll(cid) || []).find(k => keyDate(k) >= nextWk) || ''; }
-      if (!to) to = addDays(keyDate(from), 7) + '_day';
+      if (kind === 'les') { const cid = classOfKey(from); to = (realAll(cid) || []).find(k => keyDate(k) >= nextWk && keyDate(k) <= addDays(nextWk, 6)) || (step > 0 ? (realAll(cid) || []).find(k => keyDate(k) >= nextWk) : '') || ''; }
+      if (!to) to = addDays(keyDate(from), step) + '_day';
       updL(to, l => { l.res = [...(l.res || []), { ...item, done: false }]; }); toast('Moved to ' + (to.endsWith('_day') ? fmtD(keyDate(to)) : lessonLabel(to))); break;
     }
     case 'out-chip': { const t2 = el.dataset.t; updL(el.dataset.key, l => { l.outs = l.outs || []; let o = l.outs.find(x => x.title === t2); if (!o) { o = { id: nid(), title: t2, codes: [] }; l.outs.push(o); } const i2 = o.codes.findIndex(x => x.c === v); if (i2 >= 0) o.codes.splice(i2, 1); else o.codes.push({ c: v, done: false }); if (!o.codes.length) l.outs = l.outs.filter(x => x !== o); }); return 'partial-render'; }
@@ -2966,6 +3019,21 @@ function handleAct(a, v, id, el, key) {
     case 'bday-add': { const who = (($('#bday-who') || {}).value || '').trim(), dd = +(($('#bday-d') || {}).value || 0), mm = ($('#bday-m') || {}).value; if (!who || !dd || dd > 31) { toast('Add a name and day'); break; } updCfg(c => { c.birthdays = [...(c.birthdays || []), { id: nid(), who, md: mm + '-' + pad(dd) }]; }); $('#bday-who').value = ''; $('#bday-d').value = ''; toast('Birthday added'); break; }
     case 'bday-del': updCfg(c => { c.birthdays = (c.birthdays || []).filter(x => x.id !== id); }); break;
     case 'conf-try': confettiBurst(); return 'partial';
+    case 'quick-add': { const inp = $('#qa-text'), x = (inp && inp.value || '').trim(), ty = ($('#qa-type') || {}).value || 'todo'; if (!x) { inp && inp.focus(); break; } S.ui.qaType = ty; upd('W_' + v, w => { w.extras = [...(w.extras || []), { id: nid(), text: x, type: ty }]; }); inp.value = ''; setTimeout(() => { const i2 = $('#qa-text'); if (i2) i2.focus(); }, 30); toast('Added'); break; }
+    case 'copy-open': { const n = (seqDoc(S.ui.topicCls).topics || []).length; S.ui.cp = { ...(S.ui.cp || {}), from: 0, upto: Math.max(0, n - 1) }; S.ui.modal = { type: 'copyto' }; break; }
+    case 'copy-one': { const i2 = (seqDoc(S.ui.topicCls).topics || []).findIndex(t => t.id === id); S.ui.cp = { ...(S.ui.cp || {}), from: i2, upto: i2 }; S.ui.modal = { type: 'copyto' }; break; }
+    case 'cp-all': S.ui.cp.from = 0; S.ui.cp.upto = Math.max(0, (seqDoc(S.ui.topicCls).topics || []).length - 1); break;
+    case 'cp-one': S.ui.cp.upto = S.ui.cp.from; break;
+    case 'cp-tog': S.ui.cp[v] = S.ui.cp[v] === false; break;
+    case 'cp-go': {
+      const f = S.ui.cp, src = seqDoc(S.ui.topicCls).topics || [], pick = src.slice(+f.from, +f.upto + 1);
+      const objs = pick.map(t => { const o = { id: nid(), t: t.t || '', a: f.as !== false ? (t.a || '') : '' }; if (f.bring !== false && bringsOf(t).length) o.bring = [...bringsOf(t)]; if (f.hw !== false && (t.hw || []).length) o.hw = t.hw.map(h => ({ id: nid(), text: h.text, due: h.due && h.due.length >= 10 ? '' : (h.due || '') })); return o; });
+      if (!objs.length || !f.to) break;
+      if (f.where === 'replace') updSeq(f.to, sd => { sd.topics = objs; });
+      else if (f.where === 'at' && f.at) insertListAt(f.to, f.at, objs);
+      else updSeq(f.to, sd => { if (!sd.topics.length && !sd.startKey) sd.startKey = (realAll(f.to) || []).find(k => keyDate(k) >= todayIso()) || ''; sd.topics.push(...objs); });
+      S.ui.modal = null; toast(`Copied ${objs.length} topic${objs.length === 1 ? '' : 's'} to ${cls(f.to).name}`); break;
+    }
     case 'tb-del': forGroup(S.ui.topicCls, sd => { const t = sd.topics.find(x => x.id === id); if (!t) return; const b = bringsOf(t); b.splice(+v || 0, 1); if (b.length) t.bring = b; else delete t.bring; }); break;
     case 'list-del': listUpd(key, el.dataset.list, id, (it, l) => { l[el.dataset.list] = l[el.dataset.list].filter(x => x.id !== id); }); break;
     case 'res-toggle': if (id.startsWith('tb_')) updL(el.dataset.key, l => { l.tbDone = l.tbDone || {}; l.tbDone[id.slice(3)] = !l.tbDone[id.slice(3)]; }); else listUpd(el.dataset.key, 'res', id, it => { it.done = !it.done; }); checkConfetti(); break;
@@ -3330,6 +3398,7 @@ document.addEventListener('change', e => {
     case 'newtopic': if (v.trim()) { const k = el.dataset.key; embedTopic(classOfKey(k), k, v); } break;
     case 'seqstartkey': S.ui.seqStart = v; return 'partial';
     case 'addat': S.ui.addAt = v; return 'partial';
+    case 'cpf': S.ui.cp = S.ui.cp || {}; S.ui.cp[f] = ['from', 'upto'].includes(f) ? +v : v; if (f === 'from' && S.ui.cp.upto < +v) S.ui.cp.upto = +v; break;
     case 'confstyle': updCfg(c => { c.theme.confetti = v; }); break;
     case 'duemode': { const p2 = el.dataset.p; S.ui[p2 + 'Due'] = v; const box = el.parentNode; let di = box.querySelector('input[type=date]'); if (v === 'date' && !di) { di = document.createElement('input'); di.type = 'date'; di.id = p2 + '-duedate'; box.appendChild(di); } else if (v !== 'date' && di) di.remove(); return 'partial'; }
     case 'clsstudents': updCfg(c => { const k = c.classes.find(x => x.id === id); if (k) { if (+v > 0) k.students = Math.round(+v); else delete k.students; } }); break;
@@ -3386,6 +3455,7 @@ document.addEventListener('keydown', e => {
   if (typing || (k !== 'z' && k !== 'y')) return;
   e.preventDefault(); if (k === 'y' || e.shiftKey) doRedo(); else doUndo();
 });
+document.addEventListener('toggle', e => { const ds = e.target.dataset && e.target.dataset.dsec; if (ds) { S.ui.dayOpen = S.ui.dayOpen || {}; S.ui.dayOpen[ds] = e.target.open; saveUi(); } }, true);
 document.addEventListener('toggle', e => { if (e.target.id === 'pasteBox') S.ui.pasteOpen = e.target.open; if (e.target.id === 'perFnBox') S.ui.perFnOpen = e.target.open; }, true);
 window.addEventListener('change', () => { if (S.batch && S.batch.label === 'change') endBatch(); });
 // Redraw a moment after leaving a box – but not if a tap is on its way (that tap redraws anyway).
@@ -3462,7 +3532,7 @@ document.addEventListener('pointerdown', e => {
 const PLANNER_URL = 'https://claude.ai/artifact/KU9QgvPMBsXD465MuK5tdR';
 // Website version only: the Google OAuth client ID (leave empty for the claude.ai version)
 const GOOGLE_CLIENT_ID = '744170181576-ngotngduq5a2kh882pfi2dbgid03din1.apps.googleusercontent.com';
-const BUILD = '2026-11-22k', WIPE_ON_NEW_BUILD = false;
+const BUILD = '2026-11-23b', WIPE_ON_NEW_BUILD = false;
 function wipeAll() { Object.keys(S.docs).forEach(k => { delete S.docs[k]; Store.save(k); }); try { Object.keys(localStorage).filter(k => k.startsWith('lp_dis_')).forEach(k => localStorage.removeItem(k)); } catch (e) { } }
 function addHeadstart(c) {
   if (c.hs26 || (c.terms || []).some(t => /headstart/i.test(t.name))) { c.hs26 = true; return false; }
